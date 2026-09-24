@@ -5,11 +5,14 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
+using Microsoft.Win32;
+
 namespace FontAutoLoader.Services;
 
 public static class FontNativeService
 {
-    private const uint FR_PRIVATE = 0x10;
+    // 改为 0 表示对当前会话中所有程序（如播放器）可见，且无需注册表持久写入
+    private const uint FR_GLOBAL_SESSION = 0x00;
     private const uint WM_FONTCHANGE = 0x001D;
     private static readonly IntPtr HWND_BROADCAST = new(0xffff);
 
@@ -63,7 +66,7 @@ public static class FontNativeService
             return true;
         }
 
-        int result = AddFontResourceEx(fontPath, FR_PRIVATE, IntPtr.Zero);
+        int result = AddFontResourceEx(fontPath, FR_GLOBAL_SESSION, IntPtr.Zero);
         if (result > 0)
         {
             MountedPaths.TryAdd(fontPath, 0);
@@ -89,7 +92,7 @@ public static class FontNativeService
             return true;
         }
 
-        bool result = RemoveFontResourceEx(fontPath, FR_PRIVATE, IntPtr.Zero);
+        bool result = RemoveFontResourceEx(fontPath, FR_GLOBAL_SESSION, IntPtr.Zero);
         if (result)
         {
             MountedPaths.TryRemove(fontPath, out _);
@@ -107,7 +110,7 @@ public static class FontNativeService
     {
         foreach (var path in MountedPaths.Keys)
         {
-            RemoveFontResourceEx(path, FR_PRIVATE, IntPtr.Zero);
+            RemoveFontResourceEx(path, FR_GLOBAL_SESSION, IntPtr.Zero);
         }
         MountedPaths.Clear();
         NotifySystemFontChange();
@@ -117,5 +120,54 @@ public static class FontNativeService
     {
         // 广播通知正在运行的播放器等程序字体库已更新，超时设为500毫秒防止卡死
         SendMessageTimeout(HWND_BROADCAST, WM_FONTCHANGE, IntPtr.Zero, IntPtr.Zero, 0x0002, 500, out _);
+    }
+
+    /// <summary>
+    /// 获取当前系统注册表中所有已安装字体的名称列表
+    /// </summary>
+    public static HashSet<string> GetSystemInstalledFontNames()
+    {
+        var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string[] registryKeys =
+        [
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Fonts"
+        ];
+
+        foreach (var keyPath in registryKeys)
+        {
+            try
+            {
+                using var hklmKey = Registry.LocalMachine.OpenSubKey(keyPath);
+                if (hklmKey != null)
+                {
+                    foreach (var val in hklmKey.GetValueNames())
+                    {
+                        string clean = val.Replace(" (TrueType)", "", StringComparison.OrdinalIgnoreCase)
+                                          .Replace(" (OpenType)", "", StringComparison.OrdinalIgnoreCase)
+                                          .Trim();
+                        installed.Add(clean);
+                    }
+                }
+
+                using var hkcuKey = Registry.CurrentUser.OpenSubKey(keyPath);
+                if (hkcuKey != null)
+                {
+                    foreach (var val in hkcuKey.GetValueNames())
+                    {
+                        string clean = val.Replace(" (TrueType)", "", StringComparison.OrdinalIgnoreCase)
+                                          .Replace(" (OpenType)", "", StringComparison.OrdinalIgnoreCase)
+                                          .Trim();
+                        installed.Add(clean);
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略注册表访问异常
+            }
+        }
+
+        return installed;
     }
 }

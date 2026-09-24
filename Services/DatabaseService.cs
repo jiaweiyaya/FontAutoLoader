@@ -142,14 +142,15 @@ public class DatabaseService
                             }
                             else
                             {
-                                // 兜底：如果解析不到内部名称，回退使用无扩展名的文件名
+                                // 兜底：如果解析不到内部名称，标记为损坏并显示警告
                                 string fallbackName = Path.GetFileNameWithoutExtension(file);
                                 discoveredFonts.Add(new FontRecord
                                 {
                                     FilePath = file,
-                                    FamilyName = fallbackName,
+                                    FamilyName = "无法识别的字体家族",
                                     FontName = fallbackName,
-                                    Format = ext.TrimStart('.').ToUpperInvariant()
+                                    Format = ext.TrimStart('.').ToUpperInvariant(),
+                                    IsCorrupted = true
                                 });
                             }
                         }

@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace FontAutoLoader.Services;
@@ -145,21 +146,78 @@ public static class FontParserService
         return (family, full);
     }
 
+    static FontParserService()
+    {
+        // 注册代码页编码器以支持 GBK/Big5 等中文老字体的解码
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     private static string DecodeName(byte[] bytes, ushort platformId, ushort encodingId)
     {
         try
         {
-            // Windows平台 (PlatformId = 3) 或 Unicode (PlatformId = 0)
-            if (platformId == 3 || platformId == 0)
+            string text = string.Empty;
+
+            if (platformId == 3) // Windows 平台
             {
-                return Encoding.BigEndianUnicode.GetString(bytes);
+                if (encodingId == 1 || encodingId == 10)
+                {
+                    text = Encoding.BigEndianUnicode.GetString(bytes);
+                }
+                else if (encodingId == 3) // PRC / GB2312 / GBK
+                {
+                    text = Encoding.GetEncoding(936).GetString(bytes);
+                }
+                else if (encodingId == 4) // Big5
+                {
+                    text = Encoding.GetEncoding(950).GetString(bytes);
+                }
+                else if (encodingId == 2) // Shift-JIS
+                {
+                    text = Encoding.GetEncoding(932).GetString(bytes);
+                }
+                else
+                {
+                    text = Encoding.BigEndianUnicode.GetString(bytes);
+                }
             }
-            // Macintosh平台 (PlatformId = 1)
-            if (platformId == 1 && encodingId == 0)
+            else if (platformId == 0) // Unicode
             {
-                return Encoding.ASCII.GetString(bytes);
+                text = Encoding.BigEndianUnicode.GetString(bytes);
             }
-            return Encoding.UTF8.GetString(bytes);
+            else if (platformId == 1) // Mac 平台
+            {
+                if (encodingId == 0)
+                {
+                    text = Encoding.ASCII.GetString(bytes);
+                }
+                else if (encodingId == 25) // Mac 简体中文
+                {
+                    text = Encoding.GetEncoding(936).GetString(bytes);
+                }
+                else if (encodingId == 2) // Mac 繁体中文
+                {
+                    text = Encoding.GetEncoding(950).GetString(bytes);
+                }
+                else
+                {
+                    text = Encoding.ASCII.GetString(bytes);
+                }
+            }
+            else
+            {
+                text = Encoding.UTF8.GetString(bytes);
+            }
+
+            text = text.Replace("\0", "").Trim();
+
+            // 过滤掉包含不可解码字符()或控制字符的乱码串
+            if (text.Contains('\uFFFD') || text.Any(c => char.IsControl(c) && c != '\t'))
+            {
+                return string.Empty;
+            }
+
+            return text;
         }
         catch
         {
