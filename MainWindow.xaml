@@ -6,14 +6,135 @@
     xmlns:local="using:FontAutoLoader"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:FontAutoLoader.Models"
     mc:Ignorable="d"
-    Title="FontAutoLoader">
+    Title="FontAutoLoader - 番剧字幕字体临时加载器">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
     <Grid>
+        <NavigationView x:Name="NavView"
+                        PaneDisplayMode="Left"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="NavView_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="字幕字体挂载" Tag="AssPage" IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B9;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="字体库检索" Tag="SearchPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE721;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="目录与索引管理" Tag="FolderPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
+            <Grid Margin="24,16,24,24">
+                <!-- 1. ASS 字幕挂载页面 -->
+                <Grid x:Name="AssPagePanel" Visibility="Visible" RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,16">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="选择 ASS 字幕" Style="{ThemeResource AccentButtonStyle}" Click="SelectAssFile_Click" />
+                            <Button Content="一键挂载所需字体" Click="MountAssFonts_Click" />
+                            <Button Content="一键卸载字幕字体" Click="UnmountAssFonts_Click" />
+                        </StackPanel>
+                        <TextBlock x:Name="AssPathText" Text="尚未选择任何字幕文件" Opacity="0.8" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="AssStatusText" Text="等待导入字幕..." FontWeight="SemiBold" />
+                    </StackPanel>
+
+                    <ListView Grid.Row="1" x:Name="AssFontListView" SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:AssFontItem">
+                                <Border Margin="0,4,0,4" Padding="12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="4">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{x:Bind FontName}" FontWeight="Bold" FontSize="15" />
+                                                <Border CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                    <TextBlock Text="{x:Bind MatchStatusText, Mode=OneWay}" FontSize="11" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{x:Bind MatchedFilePath, Mode=OneWay}" FontSize="12" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" VerticalAlignment="Center"
+                                            Content="{x:Bind ActionText, Mode=OneWay}"
+                                            IsEnabled="{x:Bind IsFound}"
+                                            Click="AssFontItemActionButton_Click" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+
+                <!-- 2. 字体搜索页面 -->
+                <Grid x:Name="SearchPagePanel" Visibility="Collapsed" RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,16">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <TextBox x:Name="SearchBox" PlaceholderText="输入字体名称、家族名称或路径搜索..." KeyDown="SearchBox_KeyDown" />
+                            <Button Grid.Column="1" Content="搜索" Style="{ThemeResource AccentButtonStyle}" Click="SearchButton_Click" />
+                        </Grid>
+                        <TextBlock x:Name="SearchResultCountText" Text="在上方搜索框检索字体库中的所有字体" Opacity="0.8" />
+                    </StackPanel>
+
+                    <ListView Grid.Row="1" x:Name="SearchListView" SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:FontRecord">
+                                <Border Margin="0,4,0,4" Padding="12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="4">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{x:Bind FontName}" FontWeight="Bold" FontSize="15" />
+                                                <Border CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                    <TextBlock Text="{x:Bind Format}" FontSize="11" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{x:Bind FamilyName}" FontSize="13" Opacity="0.8" />
+                                            <TextBlock Text="{x:Bind FilePath}" FontSize="11" Opacity="0.5" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" VerticalAlignment="Center" Content="切换挂载状态" Click="SearchFontItemToggle_Click" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+
+                <!-- 3. 目录与索引管理页面 -->
+                <Grid x:Name="FolderPagePanel" Visibility="Collapsed" RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,16">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="添加字体目录" Click="AddFolder_Click" />
+                            <Button Content="立即扫描并重建索引" Style="{ThemeResource AccentButtonStyle}" Click="RebuildIndex_Click" />
+                            <Button Content="卸载所有临时字体" Click="UnloadAllFonts_Click" />
+                        </StackPanel>
+                        <ProgressBar x:Name="ScanProgressBar" IsIndeterminate="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="ScanStatusText" Text="提示：首次使用请先添加字体目录，并点击【立即扫描并重建索引】。" Opacity="0.8" />
+                    </StackPanel>
+
+                    <ListView Grid.Row="1" x:Name="FolderListView" SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Border Margin="0,4,0,4" Padding="12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <Button Grid.Column="1" Content="移除目录" Click="RemoveFolder_Click" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

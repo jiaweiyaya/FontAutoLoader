@@ -1,7 +1,7 @@
 {
   "profiles": {
     "FontAutoLoader (Package)": {
-      "commandName": "MsixPackage"
+      "commandName": "Project"
     },
     "FontAutoLoader (Unpackaged)": {
       "commandName": "Project"
