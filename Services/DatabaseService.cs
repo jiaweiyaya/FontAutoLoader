@@ -103,6 +103,23 @@ public class DatabaseService
         return command.ExecuteNonQuery() > 0;
     }
 
+    public int GetTotalFontCount()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(ConnectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM Fonts;";
+            var result = command.ExecuteScalar();
+            return result != null ? Convert.ToInt32(result) : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     private int GetDatabaseVersion()
     {
         try

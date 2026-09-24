@@ -33,8 +33,8 @@ namespace FontAutoLoader
         private readonly DatabaseService _dbService = new();
         private readonly ObservableCollection<AssFontItem> _assFonts = new(); // 整体显示数据源(去重)
         private readonly ObservableCollection<AssFileGroup> _fileGroups = new(); // 按 ASS 文件折叠分组数据源
-        private readonly ObservableCollection<FontRecord> _searchResults = new();
-        private readonly List<FontRecord> _allSearchResults = new();
+        private readonly ObservableCollection<SearchFontDisplayItem> _searchResults = new();
+        private readonly List<SearchFontDisplayItem> _allSearchResults = new();
         private int _searchCurrentPage = 1;
         private int _searchTotalPages = 1;
         private const int SearchPageSize = 50;
@@ -83,13 +83,15 @@ namespace FontAutoLoader
             LoadFolders();
             RefreshSystemFonts();
             LoadInstalledFontManagementList();
-            RefreshMountedFonts();
+            RefreshSearchSummary();
 
             // 拦截应用窗口关闭事件，以便执行带进度条的平滑卸载
             this.AppWindow.Closing += MainWindow_AppWindowClosing;
         }
 
         private bool _isForceClosing = false;
+        private bool _isOperationRunning = false;
+        private bool _isCancelRequested = false;
 
         private async void MainWindow_AppWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
@@ -258,10 +260,27 @@ namespace FontAutoLoader
 
         private void RefreshMountedFonts()
         {
-            _mountedFonts.Clear();
-            foreach (var path in FontNativeService.GetLoadedFonts())
+            var currentLoaded = FontNativeService.GetLoadedFonts()
+                .Select(System.IO.Path.GetFileName)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // 移除已不存在于系统挂载中的项
+            for (int i = _mountedFonts.Count - 1; i >= 0; i--)
             {
-                _mountedFonts.Add(System.IO.Path.GetFileName(path));
+                if (!currentLoaded.Contains(_mountedFonts[i]))
+                {
+                    _mountedFonts.RemoveAt(i);
+                }
+            }
+
+            // 增量追加新挂载的字体
+            foreach (var name in currentLoaded)
+            {
+                if (!_mountedFonts.Contains(name!, StringComparer.OrdinalIgnoreCase))
+                {
+                    _mountedFonts.Add(name!);
+                }
             }
         }
 
@@ -421,11 +440,7 @@ namespace FontAutoLoader
                     FontNativeService.UnloadFont(fullPath);
                     RefreshMountedFonts();
 
-                    var matched = _assFonts.FirstOrDefault(f => f.MatchedFilePath == fullPath);
-                    if (matched != null)
-                    {
-                        matched.IsLoaded = false;
-                    }
+                    SyncFontStatus(fullPath, false, "");
                     UpdateProgressMultiBar();
                 }
             }
@@ -543,6 +558,14 @@ namespace FontAutoLoader
 
         private async void MountAssFonts_Click(object sender, RoutedEventArgs e)
         {
+            if (_isOperationRunning)
+            {
+                _isCancelRequested = true;
+                BtnMountAll.Content = "正在暂停...";
+                BtnMountAll.IsEnabled = false;
+                return;
+            }
+
             var targets = _assFonts.Where(i => i.IsFound && !i.IsSystemInstalled && !string.IsNullOrEmpty(i.MatchedFilePath)).ToList();
             if (targets.Count == 0)
             {
@@ -550,32 +573,68 @@ namespace FontAutoLoader
                 return;
             }
 
-            BtnMountAll.IsEnabled = false;
+            _isOperationRunning = true;
+            _isCancelRequested = false;
+            BtnMountAll.Content = "暂停挂载";
+            BtnUnmountAss.IsEnabled = false;
+            BtnUnloadAll.IsEnabled = false;
 
             int loaded = 0;
-            for (int i = 0; i < targets.Count; i++)
-            {
-                var item = targets[i];
-                bool ok = await Task.Run(() => FontNativeService.LoadFont(item.MatchedFilePath!));
-                
-                // 同步更新整体集合与按文件集合中相同路径的所有项
-                SyncFontStatus(item.MatchedFilePath!, ok, ok ? "" : $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {Marshal.GetLastWin32Error()}\n可能原因：字体文件损坏或格式不受支持。");
-                if (ok)
-                {
-                    loaded++;
-                    RefreshMountedFonts();
-                }
+            int processed = 0;
 
-                UpdateProgressMultiBar();
-                await Task.Delay(40); // 留足40ms给高刷阻尼自然流动推进
+            try
+            {
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    var item = targets[i];
+                    bool ok = await Task.Run(() => FontNativeService.LoadFont(item.MatchedFilePath!));
+
+                    SyncFontStatus(item.MatchedFilePath!, ok, ok ? "" : $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {Marshal.GetLastWin32Error()}\n可能原因：字体文件损坏或格式不受支持。");
+                    if (ok)
+                    {
+                        loaded++;
+                        RefreshMountedFonts();
+                    }
+
+                    UpdateProgressMultiBar();
+                    processed++;
+                    await Task.Delay(40);
+
+                    if (_isCancelRequested)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _isOperationRunning = false;
+                BtnMountAll.Content = "挂载字幕字体";
+                BtnMountAll.IsEnabled = true;
+                BtnUnmountAss.IsEnabled = true;
+                BtnUnloadAll.IsEnabled = true;
             }
 
-            BtnMountAll.IsEnabled = true;
-            AssStatusText.Text = $"挂载完成：共尝试挂载 {targets.Count} 个，成功 {loaded} 个！";
+            if (_isCancelRequested)
+            {
+                AssStatusText.Text = $"已暂停挂载：已处理 {processed} 个，成功挂载 {loaded} 个，剩余 {targets.Count - processed} 个未处理。";
+            }
+            else
+            {
+                AssStatusText.Text = $"挂载完成：共尝试挂载 {targets.Count} 个，成功 {loaded} 个！";
+            }
         }
 
         private async void UnmountAssFonts_Click(object sender, RoutedEventArgs e)
         {
+            if (_isOperationRunning)
+            {
+                _isCancelRequested = true;
+                BtnUnmountAss.Content = "正在暂停...";
+                BtnUnmountAss.IsEnabled = false;
+                return;
+            }
+
             var loadedItems = _assFonts.Where(i => i.IsLoaded && !string.IsNullOrEmpty(i.MatchedFilePath)).ToList();
             if (loadedItems.Count == 0)
             {
@@ -583,18 +642,51 @@ namespace FontAutoLoader
                 return;
             }
 
-            for (int i = loadedItems.Count - 1; i >= 0; i--)
-            {
-                var item = loadedItems[i];
-                FontNativeService.UnloadFont(item.MatchedFilePath!);
-                SyncFontStatus(item.MatchedFilePath!, false, "");
-                RefreshMountedFonts();
+            _isOperationRunning = true;
+            _isCancelRequested = false;
+            BtnUnmountAss.Content = "暂停卸载";
+            BtnMountAll.IsEnabled = false;
+            BtnUnloadAll.IsEnabled = false;
 
-                UpdateProgressMultiBar();
-                await Task.Delay(40);
+            int unloaded = 0;
+            int totalToUnload = loadedItems.Count;
+
+            try
+            {
+                for (int i = loadedItems.Count - 1; i >= 0; i--)
+                {
+                    var item = loadedItems[i];
+                    FontNativeService.UnloadFont(item.MatchedFilePath!);
+                    SyncFontStatus(item.MatchedFilePath!, false, "");
+                    RefreshMountedFonts();
+                    UpdateProgressMultiBar();
+                    unloaded++;
+
+                    await Task.Delay(40);
+
+                    if (_isCancelRequested)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _isOperationRunning = false;
+                BtnUnmountAss.Content = "卸载字幕字体";
+                BtnUnmountAss.IsEnabled = true;
+                BtnMountAll.IsEnabled = true;
+                BtnUnloadAll.IsEnabled = true;
             }
 
-            AssStatusText.Text = $"卸载完成：已安全卸载 {loadedItems.Count} 个字体。";
+            if (_isCancelRequested)
+            {
+                AssStatusText.Text = $"已暂停卸载：已卸载 {unloaded} 个字幕字体，剩余 {totalToUnload - unloaded} 个未卸载。";
+            }
+            else
+            {
+                AssStatusText.Text = $"卸载完成：已安全卸载 {unloaded} 个字幕字体。";
+            }
         }
 
         private void AssFontItemActionButton_Click(object sender, RoutedEventArgs e)
@@ -628,7 +720,7 @@ namespace FontAutoLoader
         private void SyncFontStatus(string filePath, bool isLoaded, string errorMsg)
         {
             // 同步更新整体去重列表中的状态
-            foreach (var f in _assFonts.Where(x => x.MatchedFilePath == filePath))
+            foreach (var f in _assFonts.Where(x => string.Equals(x.MatchedFilePath, filePath, StringComparison.OrdinalIgnoreCase)))
             {
                 f.IsLoaded = isLoaded;
                 f.HasError = !string.IsNullOrEmpty(errorMsg);
@@ -638,12 +730,18 @@ namespace FontAutoLoader
             // 同步更新每个折叠文件组内部相同路径的字体状态
             foreach (var group in _fileGroups)
             {
-                foreach (var f in group.Fonts.Where(x => x.MatchedFilePath == filePath))
+                foreach (var f in group.Fonts.Where(x => string.Equals(x.MatchedFilePath, filePath, StringComparison.OrdinalIgnoreCase)))
                 {
                     f.IsLoaded = isLoaded;
                     f.HasError = !string.IsNullOrEmpty(errorMsg);
                     f.ErrorMessage = errorMsg;
                 }
+            }
+
+            // 同步更新字体库检索结果及全量缓存中的挂载状态
+            foreach (var s in _allSearchResults.Where(x => string.Equals(x.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+            {
+                s.IsLoaded = isLoaded;
             }
         }
 
@@ -681,6 +779,12 @@ namespace FontAutoLoader
             }
         }
 
+        private void RefreshSearchSummary()
+        {
+            int total = _dbService.GetTotalFontCount();
+            TxtSearchSummary.Text = $"字体库共收录 {total} 个字体文件。";
+        }
+
         private void ExecuteSearch()
         {
             string keyword = SearchBox.Text.Trim();
@@ -689,17 +793,22 @@ namespace FontAutoLoader
 
             if (string.IsNullOrEmpty(keyword))
             {
-                SearchResultCountText.Text = "请输入关键词后搜索。";
+                RefreshSearchSummary();
                 SearchPaginationPanel.Visibility = Visibility.Collapsed;
                 return;
             }
 
             var results = _dbService.SearchFonts(keyword);
-            _allSearchResults.AddRange(results);
+            foreach (var r in results)
+            {
+                bool isSys = _systemInstalledSet.Contains(r.FontName) || _systemInstalledSet.Contains(r.FamilyName);
+                bool isLoaded = FontNativeService.IsLoaded(r.FilePath);
+                _allSearchResults.Add(new SearchFontDisplayItem(r, isSys, isLoaded));
+            }
 
             if (_allSearchResults.Count == 0)
             {
-                SearchResultCountText.Text = "未搜索到匹配的字体记录。";
+                TxtSearchSummary.Text = $"未检索到包含 \"{keyword}\" 的字体文件。";
                 SearchPaginationPanel.Visibility = Visibility.Collapsed;
                 return;
             }
@@ -741,7 +850,8 @@ namespace FontAutoLoader
 
             int start = (_searchCurrentPage - 1) * SearchPageSize + 1;
             int end = Math.Min(_searchCurrentPage * SearchPageSize, _allSearchResults.Count);
-            SearchResultCountText.Text = $"搜索到 {_allSearchResults.Count} 条记录，当前显示第 {start} - {end} 条 (第 {_searchCurrentPage} / {_searchTotalPages} 页)。";
+            int totalAll = _dbService.GetTotalFontCount();
+            TxtSearchSummary.Text = $"共检索到 {_allSearchResults.Count} 条记录，当前显示第 {start} - {end} 条 (全库共 {totalAll} 个字体)。";
         }
 
         private void PrevPage_Click(object sender, RoutedEventArgs e)
@@ -798,16 +908,66 @@ namespace FontAutoLoader
 
         private void SearchFontItemToggle_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.DataContext is FontRecord record)
+            if (sender is Button btn && btn.DataContext is SearchFontDisplayItem item)
             {
-                if (FontNativeService.IsLoaded(record.FilePath))
+                if (item.IsLoaded)
                 {
-                    FontNativeService.UnloadFont(record.FilePath);
+                    if (FontNativeService.UnloadFont(item.FilePath))
+                    {
+                        SyncFontStatus(item.FilePath, false, "");
+                    }
                 }
                 else
                 {
-                    FontNativeService.LoadFont(record.FilePath);
+                    if (FontNativeService.LoadFont(item.FilePath))
+                    {
+                        SyncFontStatus(item.FilePath, true, "");
+                    }
                 }
+
+                RefreshMountedFonts();
+                UpdateProgressMultiBar();
+            }
+        }
+
+        private void LocateInstalledFont_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.DataContext is not SearchFontDisplayItem searchItem)
+            {
+                return;
+            }
+
+            // 1. 触发流畅页面淡入微浮动效，切到已安装字体管理页
+            SwitchPageWithAnimation("InstalledPage");
+
+            // 2. 同步左侧主导航指示条位置
+            foreach (var navObj in NavView.MenuItems)
+            {
+                if (navObj is NavigationViewItem navItem && navItem.Tag?.ToString() == "InstalledPage")
+                {
+                    NavView.SelectedItem = navItem;
+                    UpdateCustomIndicator(true);
+                    break;
+                }
+            }
+
+            // 3. 清空已安装管理页中的搜索框，展示全量字体
+            SearchInstalledBox.Text = string.Empty;
+
+            // 4. 寻找匹配的已安装字体并高亮定位
+            var target = _installedDisplayFonts.FirstOrDefault(f => f.FontName.Equals(searchItem.FontName, StringComparison.OrdinalIgnoreCase))
+                      ?? _installedDisplayFonts.FirstOrDefault(f => f.FontName.Equals(searchItem.FamilyName, StringComparison.OrdinalIgnoreCase))
+                      ?? _installedDisplayFonts.FirstOrDefault(f => f.FontName.Contains(searchItem.FontName, StringComparison.OrdinalIgnoreCase));
+
+            if (target != null)
+            {
+                foreach (var item in _installedDisplayFonts)
+                {
+                    item.IsHighlighted = false;
+                }
+
+                target.IsHighlighted = true;
+                InstalledFontsListView.ScrollIntoView(target);
             }
         }
 
@@ -859,20 +1019,92 @@ namespace FontAutoLoader
             await _dbService.RebuildIndexAsync(progress);
 
             ScanProgressBar.Visibility = Visibility.Collapsed;
+            RefreshSearchSummary();
             if (sender is Button rebuildBtn)
             {
                 rebuildBtn.IsEnabled = true;
             }
         }
 
-        private void UnloadAllFonts_Click(object sender, RoutedEventArgs e)
+        private async void UnloadAllFonts_Click(object sender, RoutedEventArgs e)
         {
-            FontNativeService.UnloadAll();
-            foreach (var font in _assFonts)
+            if (_isOperationRunning)
             {
-                font.IsLoaded = false;
+                _isCancelRequested = true;
+                BtnUnloadAll.Content = "正在暂停...";
+                BtnUnloadAll.IsEnabled = false;
+                return;
             }
-            ScanStatusText.Text = "已将所有挂载在系统中的临时字体卸载释放完毕。";
+
+            var loadedList = FontNativeService.GetLoadedFonts().ToList();
+            if (loadedList.Count == 0)
+            {
+                AssStatusText.Text = "当前系统中没有已挂载的临时字体。";
+                ScanStatusText.Text = "当前系统中没有已挂载的临时字体。";
+                return;
+            }
+
+            _isOperationRunning = true;
+            _isCancelRequested = false;
+            BtnUnloadAll.Content = "暂停卸载";
+            BtnMountAll.IsEnabled = false;
+            BtnUnmountAss.IsEnabled = false;
+
+            // 识别当前已匹配到的字幕字体文件路径集合
+            var assFontPaths = _assFonts
+                .Where(f => !string.IsNullOrEmpty(f.MatchedFilePath))
+                .Select(f => f.MatchedFilePath!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            int unloadedAss = 0;
+            int unloadedOther = 0;
+
+            try
+            {
+                for (int i = loadedList.Count - 1; i >= 0; i--)
+                {
+                    var fontPath = loadedList[i];
+                    bool isAssFont = assFontPaths.Contains(fontPath);
+
+                    FontNativeService.UnloadFont(fontPath);
+                    SyncFontStatus(fontPath, false, "");
+                    RefreshMountedFonts();
+                    UpdateProgressMultiBar();
+
+                    if (isAssFont)
+                    {
+                        unloadedAss++;
+                    }
+                    else
+                    {
+                        unloadedOther++;
+                    }
+
+                    await Task.Delay(20);
+
+                    if (_isCancelRequested)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _isOperationRunning = false;
+                BtnUnloadAll.Content = "卸载所有字体";
+                BtnUnloadAll.IsEnabled = true;
+                BtnMountAll.IsEnabled = true;
+                BtnUnmountAss.IsEnabled = true;
+            }
+
+            string resultMsg = $"已成功卸载 {unloadedOther} 个临时字体 + {unloadedAss} 个字幕字体。";
+            if (_isCancelRequested)
+            {
+                resultMsg = $"已暂停卸载：已成功卸载 {unloadedOther} 个临时字体 + {unloadedAss} 个字幕字体。";
+            }
+
+            AssStatusText.Text = resultMsg;
+            ScanStatusText.Text = resultMsg;
         }
 
         private void RefreshInstalledFonts_Click(object sender, RoutedEventArgs e)
@@ -1082,10 +1314,28 @@ namespace FontAutoLoader
         Safe
     }
 
-    public class InstalledFontDisplayItem
+    public class InstalledFontDisplayItem : System.ComponentModel.INotifyPropertyChanged
     {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
         public InstalledFontInfo Info { get; }
         public FontRiskLevel Risk { get; }
+
+        private bool _isHighlighted;
+        public bool IsHighlighted
+        {
+            get => _isHighlighted;
+            set
+            {
+                if (_isHighlighted != value)
+                {
+                    _isHighlighted = value;
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsHighlighted)));
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(BorderBrush)));
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(BorderThickness)));
+                }
+            }
+        }
 
         public string FontName => Info.FontName;
         public string FileInfoText => $"{Info.FontFileName} • {(Info.IsCurrentUser ? "当前用户安装" : "系统全局安装")}";
@@ -1117,17 +1367,64 @@ namespace FontAutoLoader
             _ => new SolidColorBrush(Windows.UI.Color.FromArgb(10, 255, 255, 255))
         };
 
-        public SolidColorBrush BorderBrush => Risk switch
-        {
-            FontRiskLevel.Critical => new SolidColorBrush(Windows.UI.Color.FromArgb(140, 211, 47, 47)),
-            FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(120, 251, 192, 45)),
-            _ => new SolidColorBrush(Windows.UI.Color.FromArgb(35, 128, 128, 128))
-        };
+        // 高亮状态下呈现加粗的亮蓝色重点聚焦外框
+        public SolidColorBrush BorderBrush => IsHighlighted
+            ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0, 120, 215))
+            : Risk switch
+            {
+                FontRiskLevel.Critical => new SolidColorBrush(Windows.UI.Color.FromArgb(140, 211, 47, 47)),
+                FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(120, 251, 192, 45)),
+                _ => new SolidColorBrush(Windows.UI.Color.FromArgb(35, 128, 128, 128))
+            };
+
+        public Thickness BorderThickness => IsHighlighted ? new Thickness(2) : new Thickness(1);
 
         public InstalledFontDisplayItem(InstalledFontInfo info, FontRiskLevel risk)
         {
             Info = info;
             Risk = risk;
+        }
+    }
+
+    public class SearchFontDisplayItem : System.ComponentModel.INotifyPropertyChanged
+    {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+        public FontRecord Record { get; }
+        public bool IsSystemInstalled { get; }
+
+        private bool _isLoaded;
+        public bool IsLoaded
+        {
+            get => _isLoaded;
+            set
+            {
+                if (_isLoaded != value)
+                {
+                    _isLoaded = value;
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsLoaded)));
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(ActionButtonText)));
+                }
+            }
+        }
+
+        public string FontName => Record.FontName;
+        public string FamilyName => Record.FamilyName;
+        public string FilePath => Record.FilePath;
+        public string Format => Record.Format;
+        public Brush BackgroundBrush => Record.BackgroundBrush;
+        public Visibility WarningVisibility => Record.WarningVisibility;
+        public Visibility CorruptedVisibility => Record.CorruptedVisibility;
+
+        public Visibility ActionButtonVisibility => IsSystemInstalled ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility LocateButtonVisibility => IsSystemInstalled ? Visibility.Visible : Visibility.Collapsed;
+        public string ActionButtonText => IsLoaded ? "卸载" : "挂载";
+
+        public SearchFontDisplayItem(FontRecord record, bool isSystemInstalled, bool isLoaded)
+        {
+            Record = record;
+            IsSystemInstalled = isSystemInstalled;
+            _isLoaded = isLoaded;
         }
     }
 }
