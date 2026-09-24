@@ -128,6 +128,25 @@ namespace FontAutoLoader
             this.Close();
         }
 
+        private bool _isLeftDrawerExpanded = true;
+
+        private void ToggleLeftDrawer_Click(object sender, RoutedEventArgs e)
+        {
+            _isLeftDrawerExpanded = !_isLeftDrawerExpanded;
+            if (_isLeftDrawerExpanded)
+            {
+                LeftColDef.Width = new GridLength(360);
+                LeftFontSidePanel.Visibility = Visibility.Visible;
+                BtnExpandDrawer.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                LeftColDef.Width = new GridLength(0);
+                LeftFontSidePanel.Visibility = Visibility.Collapsed;
+                BtnExpandDrawer.Visibility = Visibility.Visible;
+            }
+        }
+
         private void NavView_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateCustomIndicator(false);
@@ -248,7 +267,9 @@ namespace FontAutoLoader
                 _targetUnmount = 1;
                 _targetErr = 0;
                 StartVsyncTracker();
-                MountProgressCountText.Text = "0 / 0 / 0";
+                TxtCountInstalled.Text = "0";
+                TxtCountMounted.Text = "0";
+                TxtCountTotal.Text = "0";
                 return;
             }
 
@@ -257,7 +278,10 @@ namespace FontAutoLoader
             int error = _assFonts.Count(f => !f.IsFound || f.HasError);
             int unmounted = Math.Max(0, total - installed - mounted - error);
 
-            MountProgressCountText.Text = $"{installed} / {mounted} / {total}";
+            // 分别更新绿、蓝(主题色)、白三个独立数字
+            TxtCountInstalled.Text = installed.ToString();
+            TxtCountMounted.Text = mounted.ToString();
+            TxtCountTotal.Text = total.ToString();
 
             _targetInst = installed;
             _targetMount = mounted;

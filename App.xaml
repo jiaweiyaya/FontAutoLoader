@@ -8,9 +8,46 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!-- 覆盖 WinUI 3 全局强调色系统资源 -->
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- 1. 深色模式：FFBB86FC (梦幻淡紫) -->
+                <ResourceDictionary x:Key="Default">
+                    <Color x:Key="SystemAccentColor">#FFBB86FC</Color>
+                    <Color x:Key="SystemAccentColorLight1">#FFC79BFD</Color>
+                    <Color x:Key="SystemAccentColorLight2">#FFD4B0FE</Color>
+                    <Color x:Key="SystemAccentColorLight3">#FFE0C5FE</Color>
+                    <Color x:Key="SystemAccentColorDark1">#FF9E6FD6</Color>
+                    <Color x:Key="SystemAccentColorDark2">#FF8157B0</Color>
+                    <Color x:Key="SystemAccentColorDark3">#FF64418B</Color>
+
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFBB86FC" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#D9BB86FC" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#B3BB86FC" />
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFBB86FC" />
+                </ResourceDictionary>
+
+                <!-- 2. 浅色模式：FF6200EE (高雅深紫) -->
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#FF6200EE</Color>
+                    <Color x:Key="SystemAccentColorLight1">#FF7B25F1</Color>
+                    <Color x:Key="SystemAccentColorLight2">#FF954BF3</Color>
+                    <Color x:Key="SystemAccentColorLight3">#FFAF70F6</Color>
+                    <Color x:Key="SystemAccentColorDark1">#FF5300C9</Color>
+                    <Color x:Key="SystemAccentColorDark2">#FF4300A4</Color>
+                    <Color x:Key="SystemAccentColorDark3">#FF34007F</Color>
+
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF6200EE" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#E66200EE" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#CC6200EE" />
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FF6200EE" />
+
+                    <!-- 浅色模式卡片实体纯白底色与高反差精致灰轮廓边框 -->
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#CCCFD6" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

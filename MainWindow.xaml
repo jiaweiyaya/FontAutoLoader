@@ -44,10 +44,24 @@
             </NavigationView.MenuItems>
 
             <Grid Margin="24,16,24,24">
-                <!-- 1. ASS 字幕挂载页面 (左右分栏布局) -->
-                <Grid x:Name="AssPagePanel" Visibility="Visible" ColumnDefinitions="360,*">
-                    <!-- 左半边：折叠展示已临时挂载与系统已安装字体（自适应补位布局） -->
-                    <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0" RowSpacing="12">
+                <!-- 1. ASS 字幕挂载页面 (左右分栏布局，支持向左折叠收起) -->
+                <Grid x:Name="AssPagePanel" Visibility="Visible">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="LeftColDef" Width="360" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左半边：折叠展示已临时挂载与系统已安装字体 -->
+                    <Grid x:Name="LeftFontSidePanel" Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+                        <!-- 侧栏顶部标题与向左收起按钮 -->
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="字体状态面板" FontSize="13" FontWeight="SemiBold" Opacity="0.6" VerticalAlignment="Center" />
+                            <Button HorizontalAlignment="Right" Padding="6,4,6,4" ToolTipService.ToolTip="向左折叠侧栏" Click="ToggleLeftDrawer_Click">
+                                <FontIcon Glyph="&#xE76B;" FontSize="12" />
+                            </Button>
+                        </Grid>
+
+                        <Grid Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="12">
                         <!-- 上折叠面板：临时挂载字体（Auto 高度，收起时自动腾出空间） -->
                         <Expander Grid.Row="0" Header="当前临时挂载的字体" IsExpanded="True"
                                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
@@ -86,6 +100,7 @@
                                 </ListView.ItemTemplate>
                             </ListView>
                         </Expander>
+                        </Grid>
                     </Grid>
 
                     <!-- 右半边：ASS 字幕解析与挂载主控区 -->
@@ -93,14 +108,26 @@
                         <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,0,12">
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                    <!-- 折叠后显示的展开按钮 -->
+                                    <Button x:Name="BtnExpandDrawer" Visibility="Collapsed" Padding="8,4,8,4" ToolTipService.ToolTip="展开字体状态侧栏" Click="ToggleLeftDrawer_Click">
+                                        <FontIcon Glyph="&#xE76C;" FontSize="12" />
+                                    </Button>
                                     <Button Content="选择 ASS 字幕" Style="{ThemeResource AccentButtonStyle}" Click="SelectAssFile_Click" />
                                     <Button x:Name="BtnMountAll" Content="一键挂载所需字体" Click="MountAssFonts_Click" />
                                     <Button Content="一键卸载字幕字体" Click="UnmountAssFonts_Click" />
                                 </StackPanel>
-                                <TextBlock Grid.Column="2" x:Name="MountProgressCountText" Text="0 / 0 / 0" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13" />
+
+                                <!-- 右上角绿、蓝(主题色)、自适应文本色三色独立计数器 -->
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                    <TextBlock x:Name="TxtCountInstalled" Text="0" FontWeight="Bold" Foreground="#107C41" FontSize="13" />
+                                    <TextBlock Text="/" Opacity="0.4" FontSize="12" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock x:Name="TxtCountMounted" Text="0" FontWeight="Bold" Foreground="{ThemeResource AccentFillColorDefaultBrush}" FontSize="13" />
+                                    <TextBlock Text="/" Opacity="0.4" FontSize="12" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock x:Name="TxtCountTotal" Text="0" FontWeight="Bold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" FontSize="13" />
+                                </StackPanel>
                             </Grid>
 
-                            <!-- 多色分段比例进度条：绿(系统已安装) | 蓝(已挂载) | 灰(未挂载) | 红(缺失/失败) -->
+                            <!-- 多色分段比例进度条：绿(系统已安装) | 强调色(已挂载) | 灰(未挂载) | 红(缺失/失败) -->
                             <Grid x:Name="MultiColorProgressBar" Height="6" CornerRadius="3" Background="{ThemeResource LayerFillColorDefaultBrush}" Margin="0,4,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition x:Name="ColInstalled" Width="0*" />
@@ -109,7 +136,7 @@
                                     <ColumnDefinition x:Name="ColError" Width="0*" />
                                 </Grid.ColumnDefinitions>
                                 <Rectangle Grid.Column="0" Fill="#107C41" RadiusX="2" RadiusY="2" />
-                                <Rectangle Grid.Column="1" Fill="#0078D4" RadiusX="2" RadiusY="2" />
+                                <Rectangle Grid.Column="1" Fill="{ThemeResource AccentFillColorDefaultBrush}" RadiusX="2" RadiusY="2" />
                                 <Rectangle Grid.Column="2" Fill="#5A5A5A" RadiusX="2" RadiusY="2" />
                                 <Rectangle Grid.Column="3" Fill="#D13438" RadiusX="2" RadiusY="2" />
                             </Grid>
@@ -121,7 +148,10 @@
                         <ListView Grid.Row="1" x:Name="AssFontListView" SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:AssFontItem">
-                                    <Border Margin="0,4,0,4" Padding="14,0,14,0" MinHeight="68" CornerRadius="8" Background="{x:Bind CardBackgroundBrush, Mode=OneWay}">
+                                    <Border Margin="0,4,0,4" Padding="14,0,14,0" MinHeight="68" CornerRadius="8"
+                                            Background="{x:Bind CardBackgroundBrush, Mode=OneWay}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1">
                                         <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                                             <!-- 左侧文字区域绝对垂直居中，且路径为空时自动折叠消除空白偏移 -->
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="3">
@@ -146,6 +176,7 @@
                                             <Button Grid.Column="1" VerticalAlignment="Center"
                                                     Content="{x:Bind ActionText, Mode=OneWay}"
                                                     IsEnabled="{x:Bind IsFound}"
+                                                    Visibility="{x:Bind ActionButtonVisibility, Mode=OneWay}"
                                                     Click="AssFontItemActionButton_Click" />
                                         </Grid>
                                     </Border>
@@ -170,6 +201,7 @@
                             <DataTemplate x:DataType="models:FontRecord">
                                 <Border Margin="0,4,0,4" Padding="12" CornerRadius="8"
                                         Background="{x:Bind BackgroundBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="1">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <StackPanel Grid.Column="0" Spacing="4">
@@ -178,13 +210,13 @@
                                                 <Border CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource LayerFillColorDefaultBrush}">
                                                     <TextBlock Text="{x:Bind Format}" FontSize="11" />
                                                 </Border>
-                                                <!-- 黄色：存在解析瑕疵 -->
-                                                <Border Visibility="{x:Bind WarningVisibility}" CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource SystemFillColorCautionBrush}">
-                                                    <TextBlock Text="部分名称异常" FontSize="11" Foreground="Black" />
+                                                <!-- 高对比暖黄底黑字：无论深浅模式字迹都极为清晰锐利 -->
+                                                <Border Visibility="{x:Bind WarningVisibility}" CornerRadius="4" Padding="6,1,6,1" Background="#FBC02D">
+                                                    <TextBlock Text="部分名称异常" FontSize="11" FontWeight="SemiBold" Foreground="#212121" />
                                                 </Border>
-                                                <!-- 红色：彻底无法解析 -->
-                                                <Border Visibility="{x:Bind CorruptedVisibility}" CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource SystemFillColorCriticalBrush}">
-                                                    <TextBlock Text="彻底损坏/无法识别" FontSize="11" Foreground="White" />
+                                                <!-- 高对比鲜红底白字 -->
+                                                <Border Visibility="{x:Bind CorruptedVisibility}" CornerRadius="4" Padding="6,1,6,1" Background="#E53935">
+                                                    <TextBlock Text="彻底损坏/无法识别" FontSize="11" FontWeight="SemiBold" Foreground="White" />
                                                 </Border>
                                             </StackPanel>
                                             <TextBlock Text="{x:Bind FamilyName}" FontSize="13" Opacity="0.8" />
@@ -213,7 +245,10 @@
                     <ListView Grid.Row="1" x:Name="FolderListView" SelectionMode="None">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
-                                <Border Margin="0,4,0,4" Padding="12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                <Border Margin="0,4,0,4" Padding="12" CornerRadius="8"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Grid.Column="0" Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                         <Button Grid.Column="1" Content="移除目录" Click="RemoveFolder_Click" />

@@ -14,16 +14,21 @@ public class FontRecord
     public bool IsCorrupted { get; set; }
     public bool HasWarning { get; set; }
 
-    // 彻底损坏标红，存在解析瑕疵标黄，正常则使用半透明底色
+    // 彻底损坏标红，存在解析瑕疵标黄，正常自适应系统卡片画刷
     public Brush BackgroundBrush
     {
         get
         {
             if (IsCorrupted)
-                return new SolidColorBrush(Color.FromArgb(50, 240, 60, 60)); // 红色
+                return new SolidColorBrush(Color.FromArgb(35, 230, 40, 40)); // 柔和红
             if (HasWarning)
-                return new SolidColorBrush(Color.FromArgb(45, 220, 170, 0)); // 黄色
-            return new SolidColorBrush(Color.FromArgb(16, 255, 255, 255));
+                return new SolidColorBrush(Color.FromArgb(40, 245, 170, 0)); // 醒目暖黄
+            
+            if (Application.Current.Resources.TryGetValue("CardBackgroundFillColorDefaultBrush", out var brushObj) && brushObj is Brush defaultBrush)
+            {
+                return defaultBrush;
+            }
+            return new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         }
     }
 
