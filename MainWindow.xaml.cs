@@ -18,6 +18,7 @@ using Windows.Storage.Pickers;
 using WinRT.Interop;
 using FontAutoLoader.Models;
 using FontAutoLoader.Services;
+using System.Runtime.InteropServices;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -265,18 +266,21 @@ namespace FontAutoLoader
                 {
                     item.IsLoaded = true;
                     item.HasError = false;
+                    item.ErrorMessage = string.Empty;
                     loaded++;
+                    RefreshMountedFonts(); // 挂载成功后立刻实时刷新左上角列表
                 }
                 else
                 {
                     item.HasError = true;
+                    int win32Err = Marshal.GetLastWin32Error();
+                    item.ErrorMessage = $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {win32Err}\n文件路径: {item.MatchedFilePath}\n可能原因：字体文件已损坏、非标准矢量字体格式或被系统独占锁定。";
                 }
 
                 UpdateProgressMultiBar();
                 await Task.Delay(25); // 顺畅的渲染动画
             }
 
-            RefreshMountedFonts();
             BtnMountAll.IsEnabled = true;
             AssStatusText.Text = $"挂载完成：共尝试挂载 {targets.Count} 个，成功 {loaded} 个！";
         }
@@ -296,12 +300,12 @@ namespace FontAutoLoader
                 var item = loadedItems[i];
                 FontNativeService.UnloadFont(item.MatchedFilePath!);
                 item.IsLoaded = false;
+                RefreshMountedFonts(); // 卸载成功后立刻实时刷新左上角列表
 
                 UpdateProgressMultiBar();
                 await Task.Delay(25);
             }
 
-            RefreshMountedFonts();
             AssStatusText.Text = $"卸载完成：已安全卸载 {loadedItems.Count} 个字体。";
         }
 
@@ -322,14 +326,38 @@ namespace FontAutoLoader
                     {
                         item.IsLoaded = true;
                         item.HasError = false;
+                        item.ErrorMessage = string.Empty;
                     }
                     else
                     {
                         item.HasError = true;
+                        int win32Err = Marshal.GetLastWin32Error();
+                        item.ErrorMessage = $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {win32Err}\n文件路径: {item.MatchedFilePath}\n可能原因：字体文件损坏或格式不受支持。";
                     }
                 }
                 RefreshMountedFonts();
                 UpdateProgressMultiBar();
+            }
+        }
+
+        private async void ShowErrorDetail_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is AssFontItem item)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = $"挂载失败详情: {item.FontName}",
+                    Content = new TextBlock
+                    {
+                        Text = string.IsNullOrWhiteSpace(item.ErrorMessage) ? "未知错误，未能获取到底层系统报错详情。" : item.ErrorMessage,
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.9
+                    },
+                    CloseButtonText = "确定",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                await dialog.ShowAsync();
             }
         }
 

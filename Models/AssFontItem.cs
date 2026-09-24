@@ -9,6 +9,7 @@ public partial class AssFontItem : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MatchStatusText))]
+    [NotifyPropertyChangedFor(nameof(CardBackgroundBrush))]
     private bool _isFound;
 
     [ObservableProperty]
@@ -28,7 +29,11 @@ public partial class AssFontItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(MatchStatusText))]
     [NotifyPropertyChangedFor(nameof(BadgeBrush))]
     [NotifyPropertyChangedFor(nameof(BadgeTextBrush))]
+    [NotifyPropertyChangedFor(nameof(CardBackgroundBrush))]
     private bool _hasError;
+
+    [ObservableProperty]
+    private string _errorMessage = string.Empty;
 
     public string MatchStatusText
     {
@@ -74,6 +79,19 @@ public partial class AssFontItem : ObservableObject
                 return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 30, 30, 30));
             }
             return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
+        }
+    }
+
+    // 整行卡片底色：异常时变红，缺失时变黄，正常时为默认半透明
+    public Microsoft.UI.Xaml.Media.Brush CardBackgroundBrush
+    {
+        get
+        {
+            if (HasError)
+                return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(50, 240, 60, 60)); // 挂载异常红
+            if (!IsFound)
+                return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(45, 220, 170, 0)); // 库内缺失黄
+            return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(16, 255, 255, 255));
         }
     }
 }
