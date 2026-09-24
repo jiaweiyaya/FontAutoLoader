@@ -287,7 +287,7 @@ public class DatabaseService
             SELECT Id, FilePath, FontName, FamilyName, Format, IsCorrupted, HasWarning
             FROM Fonts 
             WHERE FontName LIKE $kw OR FamilyName LIKE $kw OR FilePath LIKE $kw
-            LIMIT 200;
+            ORDER BY FontName ASC;
         ";
         command.Parameters.AddWithValue("$kw", $"%{keyword}%");
 

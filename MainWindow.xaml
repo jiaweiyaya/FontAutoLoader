@@ -272,9 +272,10 @@
                         <TextBlock x:Name="SearchResultCountText" Text="在上方搜索框检索字体库中的所有字体" Opacity="0.8" />
                     </StackPanel>
 
-                    <ListView Grid.Row="1" x:Name="SearchListView" SelectionMode="None">
-                        <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="models:FontRecord">
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                        <ListView Grid.Column="0" x:Name="SearchListView" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:FontRecord">
                                 <Border Margin="0,4,0,4" Padding="12" CornerRadius="8"
                                         Background="{x:Bind BackgroundBrush}"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -304,7 +305,35 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
+
+                    <!-- 竖向页切换器 (仅在超过一页时自动显示) -->
+                    <Border Grid.Column="1" x:Name="SearchPaginationPanel" Visibility="Collapsed"
+                            VerticalAlignment="Center" Margin="12,0,0,0" Padding="5,6,5,6"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1" CornerRadius="8">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center">
+                            <!-- 上箭头 -->
+                            <Button x:Name="BtnPrevPage" Click="PrevPage_Click" Width="34" Height="26" Padding="0" HorizontalAlignment="Center" ToolTipService.ToolTip="上一页">
+                                <FontIcon Glyph="&#xE70E;" FontSize="11" />
+                            </Button>
+                            <!-- 当前页输入框 (解除64px最小宽度枷锁，下压Padding实现真正垂直居中) -->
+                            <TextBox x:Name="TxtCurrentPage" Width="34" Height="26" MinWidth="0" MinHeight="0"
+                                     HorizontalAlignment="Center" TextAlignment="Center"
+                                     Padding="0,3,0,0" FontSize="12" TextWrapping="Wrap" MaxLength="4"
+                                     KeyDown="TxtCurrentPage_KeyDown" LostFocus="TxtCurrentPage_LostFocus" ToolTipService.ToolTip="输入页码回车跳转" />
+                            <!-- 分隔符 - -->
+                            <TextBlock Text="-" HorizontalAlignment="Center" Opacity="0.4" FontSize="11" Margin="0,-2,0,-2" />
+                            <!-- 总页数 -->
+                            <TextBlock x:Name="TxtTotalPages" Text="1" HorizontalAlignment="Center" FontWeight="SemiBold" FontSize="12" Opacity="0.8" />
+                            <!-- 下箭头 -->
+                            <Button x:Name="BtnNextPage" Click="NextPage_Click" Width="34" Height="26" Padding="0" HorizontalAlignment="Center" ToolTipService.ToolTip="下一页">
+                                <FontIcon Glyph="&#xE70D;" FontSize="11" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </Grid>
+            </Grid>
 
                 <!-- 4. 已安装字体管理页面 -->
                 <Grid x:Name="InstalledPagePanel" Visibility="Collapsed" RowDefinitions="Auto,Auto,*">

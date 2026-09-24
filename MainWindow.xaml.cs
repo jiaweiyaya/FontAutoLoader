@@ -34,6 +34,10 @@ namespace FontAutoLoader
         private readonly ObservableCollection<AssFontItem> _assFonts = new(); // 整体显示数据源(去重)
         private readonly ObservableCollection<AssFileGroup> _fileGroups = new(); // 按 ASS 文件折叠分组数据源
         private readonly ObservableCollection<FontRecord> _searchResults = new();
+        private readonly List<FontRecord> _allSearchResults = new();
+        private int _searchCurrentPage = 1;
+        private int _searchTotalPages = 1;
+        private const int SearchPageSize = 50;
         private readonly ObservableCollection<string> _folders = new();
         private readonly ObservableCollection<string> _mountedFonts = new();
         private readonly ObservableCollection<InstalledFontDisplayItem> _installedDisplayFonts = new();
@@ -681,20 +685,115 @@ namespace FontAutoLoader
         {
             string keyword = SearchBox.Text.Trim();
             _searchResults.Clear();
+            _allSearchResults.Clear();
 
             if (string.IsNullOrEmpty(keyword))
             {
                 SearchResultCountText.Text = "请输入关键词后搜索。";
+                SearchPaginationPanel.Visibility = Visibility.Collapsed;
                 return;
             }
 
             var results = _dbService.SearchFonts(keyword);
-            foreach (var item in results)
+            _allSearchResults.AddRange(results);
+
+            if (_allSearchResults.Count == 0)
+            {
+                SearchResultCountText.Text = "未搜索到匹配的字体记录。";
+                SearchPaginationPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _searchTotalPages = (int)Math.Ceiling((double)_allSearchResults.Count / SearchPageSize);
+            _searchCurrentPage = 1;
+
+            UpdateSearchPageDisplay();
+        }
+
+        private void UpdateSearchPageDisplay()
+        {
+            if (_searchTotalPages <= 1)
+            {
+                SearchPaginationPanel.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                SearchPaginationPanel.Visibility = Visibility.Visible;
+            }
+
+            _searchCurrentPage = Math.Clamp(_searchCurrentPage, 1, Math.Max(1, _searchTotalPages));
+
+            TxtCurrentPage.Text = _searchCurrentPage.ToString();
+            TxtTotalPages.Text = _searchTotalPages.ToString();
+
+            BtnPrevPage.IsEnabled = _searchCurrentPage > 1;
+            BtnNextPage.IsEnabled = _searchCurrentPage < _searchTotalPages;
+
+            _searchResults.Clear();
+            var pageItems = _allSearchResults
+                .Skip((_searchCurrentPage - 1) * SearchPageSize)
+                .Take(SearchPageSize);
+
+            foreach (var item in pageItems)
             {
                 _searchResults.Add(item);
             }
 
-            SearchResultCountText.Text = $"搜索到 {_searchResults.Count} 条匹配的字体记录。";
+            int start = (_searchCurrentPage - 1) * SearchPageSize + 1;
+            int end = Math.Min(_searchCurrentPage * SearchPageSize, _allSearchResults.Count);
+            SearchResultCountText.Text = $"搜索到 {_allSearchResults.Count} 条记录，当前显示第 {start} - {end} 条 (第 {_searchCurrentPage} / {_searchTotalPages} 页)。";
+        }
+
+        private void PrevPage_Click(object sender, RoutedEventArgs e)
+        {
+            if (_searchCurrentPage > 1)
+            {
+                _searchCurrentPage--;
+                UpdateSearchPageDisplay();
+            }
+        }
+
+        private void NextPage_Click(object sender, RoutedEventArgs e)
+        {
+            if (_searchCurrentPage < _searchTotalPages)
+            {
+                _searchCurrentPage++;
+                UpdateSearchPageDisplay();
+            }
+        }
+
+        private void TxtCurrentPage_KeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Enter)
+            {
+                CommitPageJump();
+            }
+        }
+
+        private void TxtCurrentPage_LostFocus(object sender, RoutedEventArgs e)
+        {
+            CommitPageJump();
+        }
+
+        private void CommitPageJump()
+        {
+            if (int.TryParse(TxtCurrentPage.Text.Trim(), out int page))
+            {
+                page = Math.Clamp(page, 1, _searchTotalPages);
+                if (page != _searchCurrentPage)
+                {
+                    _searchCurrentPage = page;
+                    UpdateSearchPageDisplay();
+                }
+                else
+                {
+                    TxtCurrentPage.Text = _searchCurrentPage.ToString();
+                }
+            }
+            else
+            {
+                TxtCurrentPage.Text = _searchCurrentPage.ToString();
+            }
         }
 
         private void SearchFontItemToggle_Click(object sender, RoutedEventArgs e)
