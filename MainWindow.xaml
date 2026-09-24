@@ -92,10 +92,23 @@
                                     <Button x:Name="BtnMountAll" Content="一键挂载所需字体" Click="MountAssFonts_Click" />
                                     <Button Content="一键卸载字幕字体" Click="UnmountAssFonts_Click" />
                                 </StackPanel>
-                                <TextBlock Grid.Column="2" x:Name="MountProgressCountText" Text="" FontWeight="Bold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" x:Name="MountProgressCountText" Text="0 / 0 / 0" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13" />
                             </Grid>
 
-                            <ProgressBar x:Name="MountProgressBar" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" />
+                            <!-- 多色分段比例进度条：绿(系统已安装) | 蓝(已挂载) | 灰(未挂载) | 红(缺失/失败) -->
+                            <Grid x:Name="MultiColorProgressBar" Height="6" CornerRadius="3" Background="{ThemeResource LayerFillColorDefaultBrush}" Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition x:Name="ColInstalled" Width="0*" />
+                                    <ColumnDefinition x:Name="ColMounted" Width="0*" />
+                                    <ColumnDefinition x:Name="ColUnmounted" Width="1*" />
+                                    <ColumnDefinition x:Name="ColError" Width="0*" />
+                                </Grid.ColumnDefinitions>
+                                <Rectangle Grid.Column="0" Fill="#107C41" RadiusX="2" RadiusY="2" />
+                                <Rectangle Grid.Column="1" Fill="#0078D4" RadiusX="2" RadiusY="2" />
+                                <Rectangle Grid.Column="2" Fill="#5A5A5A" RadiusX="2" RadiusY="2" />
+                                <Rectangle Grid.Column="3" Fill="#D13438" RadiusX="2" RadiusY="2" />
+                            </Grid>
+
                             <TextBlock x:Name="AssPathText" Text="尚未选择任何字幕文件" Opacity="0.8" TextTrimming="CharacterEllipsis" FontSize="12" />
                             <TextBlock x:Name="AssStatusText" Text="等待导入字幕..." FontWeight="SemiBold" />
                         </StackPanel>
@@ -108,8 +121,8 @@
                                             <StackPanel Grid.Column="0" Spacing="4">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <TextBlock Text="{x:Bind FontName}" FontWeight="Bold" FontSize="15" />
-                                                    <Border CornerRadius="4" Padding="6,1,6,1" Background="{ThemeResource LayerFillColorDefaultBrush}">
-                                                        <TextBlock Text="{x:Bind MatchStatusText, Mode=OneWay}" FontSize="11" />
+                                                    <Border CornerRadius="4" Padding="6,1,6,1" Background="{x:Bind BadgeBrush, Mode=OneWay}">
+                                                        <TextBlock Text="{x:Bind MatchStatusText, Mode=OneWay}" FontSize="11" Foreground="{x:Bind BadgeTextBrush, Mode=OneWay}" />
                                                     </Border>
                                                 </StackPanel>
                                                 <TextBlock Text="{x:Bind MatchedFilePath, Mode=OneWay}" FontSize="12" Opacity="0.6" TextTrimming="CharacterEllipsis" />
