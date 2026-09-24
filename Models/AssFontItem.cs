@@ -43,6 +43,13 @@ public partial class AssFontItem : ObservableObject
     [ObservableProperty]
     private string _errorMessage = string.Empty;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SourceFileVisibility))]
+    private string _sourceFileName = string.Empty;
+
+    public Microsoft.UI.Xaml.Visibility SourceFileVisibility =>
+        string.IsNullOrEmpty(SourceFileName) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+
     public string MatchStatusText
     {
         get

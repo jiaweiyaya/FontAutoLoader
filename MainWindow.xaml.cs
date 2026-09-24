@@ -31,7 +31,8 @@ namespace FontAutoLoader
     public sealed partial class MainWindow : Window
     {
         private readonly DatabaseService _dbService = new();
-        private readonly ObservableCollection<AssFontItem> _assFonts = new();
+        private readonly ObservableCollection<AssFontItem> _assFonts = new(); // 整体显示数据源(去重)
+        private readonly ObservableCollection<AssFileGroup> _fileGroups = new(); // 按 ASS 文件折叠分组数据源
         private readonly ObservableCollection<FontRecord> _searchResults = new();
         private readonly ObservableCollection<string> _folders = new();
         private readonly ObservableCollection<string> _mountedFonts = new();
@@ -63,6 +64,7 @@ namespace FontAutoLoader
             RootWindowGrid.SizeChanged += (s, e) => UpdateCustomIndicator(false);
 
             AssFontListView.ItemsSource = _assFonts;
+            AssGroupedListView.ItemsSource = _fileGroups;
             SearchListView.ItemsSource = _searchResults;
             FolderListView.ItemsSource = _folders;
             MountedFontListView.ItemsSource = _mountedFonts;
@@ -408,29 +410,39 @@ namespace FontAutoLoader
             picker.SuggestedStartLocation = PickerLocationId.VideosLibrary;
             picker.FileTypeFilter.Add(".ass");
 
-            var file = await picker.PickSingleFileAsync();
-            if (file == null)
+            var files = await picker.PickMultipleFilesAsync();
+            if (files == null || files.Count == 0)
             {
                 return;
             }
 
-            AssPathText.Text = file.Path;
+            AssPathText.Text = files.Count == 1 ? files[0].Path : $"已选择 {files.Count} 个 ASS 字幕文件 (例如: {files[0].Name} 等)";
             _assFonts.Clear();
+            _fileGroups.Clear();
 
-            var fontNames = AssParserService.ParseFontsFromAssFile(file.Path);
+            var uniqueNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var fileToFonts = new List<(string FileName, string FilePath, HashSet<string> Fonts)>();
+
+            foreach (var file in files)
+            {
+                var fFonts = AssParserService.ParseFontsFromAssFile(file.Path);
+                fileToFonts.Add((file.Name, file.Path, fFonts));
+                foreach (var font in fFonts)
+                {
+                    uniqueNames.Add(font);
+                }
+            }
+
+            // 1. 构建整体去重视图数据
             int matchedCount = 0;
-
-            foreach (var name in fontNames)
+            foreach (var name in uniqueNames)
             {
                 bool isSystemInstalled = _systemInstalledSet.Contains(name);
                 string? matchedPath = isSystemInstalled ? null : _dbService.MatchFontFilePath(name);
                 bool isFound = isSystemInstalled || !string.IsNullOrEmpty(matchedPath);
                 bool isLoaded = !string.IsNullOrEmpty(matchedPath) && FontNativeService.IsLoaded(matchedPath);
 
-                if (isFound)
-                {
-                    matchedCount++;
-                }
+                if (isFound) matchedCount++;
 
                 _assFonts.Add(new AssFontItem
                 {
@@ -438,12 +450,64 @@ namespace FontAutoLoader
                     IsFound = isFound,
                     MatchedFilePath = matchedPath,
                     IsLoaded = isLoaded,
-                    IsSystemInstalled = isSystemInstalled
+                    IsSystemInstalled = isSystemInstalled,
+                    SourceFileName = string.Empty
                 });
             }
 
+            // 2. 构建按 ASS 文件分组折叠数据源（默认折叠）
+            foreach (var (fileName, filePath, fFonts) in fileToFonts)
+            {
+                var group = new AssFileGroup
+                {
+                    FileName = fileName,
+                    FilePath = filePath,
+                    Summary = $"{fFonts.Count} 个字体需求"
+                };
+
+                foreach (var name in fFonts)
+                {
+                    var baseItem = _assFonts.First(u => u.FontName.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    group.Fonts.Add(new AssFontItem
+                    {
+                        FontName = name,
+                        IsFound = baseItem.IsFound,
+                        MatchedFilePath = baseItem.MatchedFilePath,
+                        IsLoaded = baseItem.IsLoaded,
+                        IsSystemInstalled = baseItem.IsSystemInstalled,
+                        SourceFileName = fileName
+                    });
+                }
+
+                _fileGroups.Add(group);
+            }
+
             UpdateProgressMultiBar();
-            AssStatusText.Text = $"共解析出 {_assFonts.Count} 个字体需求，本地索引库已匹配 {matchedCount} 个。";
+            RefreshViewMode();
+            AssStatusText.Text = $"共解析 {files.Count} 个文件，整体去重后共 {_assFonts.Count} 个字体需求（已匹配 {matchedCount} 个）。";
+        }
+
+        private void ViewModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RefreshViewMode();
+        }
+
+        private void RefreshViewMode()
+        {
+            if (AssFontListView == null || AssGroupedListView == null || ViewModeComboBox == null) return;
+
+            if (ViewModeComboBox.SelectedIndex == 1)
+            {
+                // 切换为按 ASS 文件折叠列表视图
+                AssFontListView.Visibility = Visibility.Collapsed;
+                AssGroupedListView.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // 切换为整体去重视图
+                AssGroupedListView.Visibility = Visibility.Collapsed;
+                AssFontListView.Visibility = Visibility.Visible;
+            }
         }
 
         private async void MountAssFonts_Click(object sender, RoutedEventArgs e)
@@ -462,19 +526,13 @@ namespace FontAutoLoader
             {
                 var item = targets[i];
                 bool ok = await Task.Run(() => FontNativeService.LoadFont(item.MatchedFilePath!));
+                
+                // 同步更新整体集合与按文件集合中相同路径的所有项
+                SyncFontStatus(item.MatchedFilePath!, ok, ok ? "" : $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {Marshal.GetLastWin32Error()}\n可能原因：字体文件损坏或格式不受支持。");
                 if (ok)
                 {
-                    item.IsLoaded = true;
-                    item.HasError = false;
-                    item.ErrorMessage = string.Empty;
                     loaded++;
-                    RefreshMountedFonts(); // 挂载成功后立刻实时刷新左上角列表
-                }
-                else
-                {
-                    item.HasError = true;
-                    int win32Err = Marshal.GetLastWin32Error();
-                    item.ErrorMessage = $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {win32Err}\n文件路径: {item.MatchedFilePath}\n可能原因：字体文件已损坏、非标准矢量字体格式或被系统独占锁定。";
+                    RefreshMountedFonts();
                 }
 
                 UpdateProgressMultiBar();
@@ -494,16 +552,15 @@ namespace FontAutoLoader
                 return;
             }
 
-            // 倒退动画：从后往前逐个卸载，蓝色进度向左倒退缩回，灰色增多
             for (int i = loadedItems.Count - 1; i >= 0; i--)
             {
                 var item = loadedItems[i];
                 FontNativeService.UnloadFont(item.MatchedFilePath!);
-                item.IsLoaded = false;
-                RefreshMountedFonts(); // 卸载成功后立刻实时刷新左上角列表
+                SyncFontStatus(item.MatchedFilePath!, false, "");
+                RefreshMountedFonts();
 
                 UpdateProgressMultiBar();
-                await Task.Delay(40); // 留足40ms给高刷阻尼连续倒退缩减
+                await Task.Delay(40);
             }
 
             AssStatusText.Text = $"卸载完成：已安全卸载 {loadedItems.Count} 个字体。";
@@ -517,26 +574,45 @@ namespace FontAutoLoader
                 {
                     if (FontNativeService.UnloadFont(item.MatchedFilePath))
                     {
-                        item.IsLoaded = false;
+                        SyncFontStatus(item.MatchedFilePath, false, "");
                     }
                 }
                 else
                 {
                     if (FontNativeService.LoadFont(item.MatchedFilePath))
                     {
-                        item.IsLoaded = true;
-                        item.HasError = false;
-                        item.ErrorMessage = string.Empty;
+                        SyncFontStatus(item.MatchedFilePath, true, "");
                     }
                     else
                     {
-                        item.HasError = true;
                         int win32Err = Marshal.GetLastWin32Error();
-                        item.ErrorMessage = $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {win32Err}\n文件路径: {item.MatchedFilePath}\n可能原因：字体文件损坏或格式不受支持。";
+                        SyncFontStatus(item.MatchedFilePath, false, $"Windows GDI 接口返回挂载失败。\nWin32 错误码: {win32Err}\n可能原因：字体文件损坏或格式不受支持。");
                     }
                 }
                 RefreshMountedFonts();
                 UpdateProgressMultiBar();
+            }
+        }
+
+        private void SyncFontStatus(string filePath, bool isLoaded, string errorMsg)
+        {
+            // 同步更新整体去重列表中的状态
+            foreach (var f in _assFonts.Where(x => x.MatchedFilePath == filePath))
+            {
+                f.IsLoaded = isLoaded;
+                f.HasError = !string.IsNullOrEmpty(errorMsg);
+                f.ErrorMessage = errorMsg;
+            }
+
+            // 同步更新每个折叠文件组内部相同路径的字体状态
+            foreach (var group in _fileGroups)
+            {
+                foreach (var f in group.Fonts.Where(x => x.MatchedFilePath == filePath))
+                {
+                    f.IsLoaded = isLoaded;
+                    f.HasError = !string.IsNullOrEmpty(errorMsg);
+                    f.ErrorMessage = errorMsg;
+                }
             }
         }
 
