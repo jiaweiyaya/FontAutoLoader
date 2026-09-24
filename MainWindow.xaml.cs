@@ -45,9 +45,22 @@ namespace FontAutoLoader
         private readonly System.Diagnostics.Stopwatch _animStopwatch = new();
         private TimeSpan _lastRenderingTime;
 
+        // 自定义指示条 200Hz 无缝滑行状态
+        private double _curIndicatorY = 0;
+        private double _targetIndicatorY = 0;
+        private double _indicatorX = 4;
+        private bool _isIndicatorAnimating = false;
+
+        // 右侧面板 200Hz 淡入微浮入动效状态
+        private Grid? _currentTransitionPanel;
+        private double _panelAnimTime = 0;
+        private bool _isPanelTransitioning = false;
+
         public MainWindow()
         {
             InitializeComponent();
+
+            RootWindowGrid.SizeChanged += (s, e) => UpdateCustomIndicator(false);
 
             AssFontListView.ItemsSource = _assFonts;
             SearchListView.ItemsSource = _searchResults;
@@ -115,15 +128,85 @@ namespace FontAutoLoader
             this.Close();
         }
 
+        private void NavView_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateCustomIndicator(false);
+        }
+
         private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
         {
             if (args.SelectedItem is NavigationViewItem item)
             {
                 string tag = item.Tag?.ToString() ?? string.Empty;
-                AssPagePanel.Visibility = tag == "AssPage" ? Visibility.Visible : Visibility.Collapsed;
-                SearchPagePanel.Visibility = tag == "SearchPage" ? Visibility.Visible : Visibility.Collapsed;
-                FolderPagePanel.Visibility = tag == "FolderPage" ? Visibility.Visible : Visibility.Collapsed;
+
+                // 立即启动小蓝条滑动
+                UpdateCustomIndicator(true);
+
+                // 启动右侧内容区域的平滑过渡动画
+                SwitchPageWithAnimation(tag);
             }
+        }
+
+        private void SwitchPageWithAnimation(string tag)
+        {
+            Grid target = tag switch
+            {
+                "AssPage" => AssPagePanel,
+                "SearchPage" => SearchPagePanel,
+                "FolderPage" => FolderPagePanel,
+                _ => AssPagePanel
+            };
+
+            // 隐藏其余面板
+            AssPagePanel.Visibility = (target == AssPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+            SearchPagePanel.Visibility = (target == SearchPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+            FolderPagePanel.Visibility = (target == FolderPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+
+            // 初始化新面板在下方向上微移 16px 且透明
+            target.Opacity = 0;
+            target.Translation = new System.Numerics.Vector3(0, 16, 0);
+
+            _currentTransitionPanel = target;
+            _panelAnimTime = 0;
+            _isPanelTransitioning = true;
+
+            StartVsyncTracker();
+        }
+
+        private void UpdateCustomIndicator(bool animate)
+        {
+            if (NavView.SelectedItem is not NavigationViewItem targetItem) return;
+
+            try
+            {
+                var transform = targetItem.TransformToVisual(RootWindowGrid);
+                var pt = transform.TransformPoint(new Windows.Foundation.Point(0, 0));
+
+                _indicatorX = pt.X + 4;
+                _targetIndicatorY = pt.Y + (targetItem.ActualHeight - CustomIndicator.Height) / 2;
+
+                if (!animate || CustomIndicator.Opacity == 0)
+                {
+                    _curIndicatorY = _targetIndicatorY;
+                    CustomIndicator.Opacity = 1;
+                    ApplyIndicatorPosition();
+                }
+                else
+                {
+                    _isIndicatorAnimating = true;
+                    StartVsyncTracker();
+                }
+            }
+            catch
+            {
+                // 窗口刚初始化时容错
+            }
+        }
+
+        private void ApplyIndicatorPosition()
+        {
+            CustomIndicator.Margin = new Thickness(_indicatorX, 0, 0, 0);
+            CustomIndicator.Translation = new System.Numerics.Vector3(0, (float)_curIndicatorY, 0);
         }
 
         private void LoadFolders()
@@ -212,12 +295,46 @@ namespace FontAutoLoader
             _curUnmount += (_targetUnmount - _curUnmount) * factor;
             _curErr += (_targetErr - _curErr) * factor;
 
-            bool isDone = Math.Abs(_targetInst - _curInst) < 0.002 &&
-                          Math.Abs(_targetMount - _curMount) < 0.002 &&
-                          Math.Abs(_targetUnmount - _curUnmount) < 0.002 &&
-                          Math.Abs(_targetErr - _curErr) < 0.002;
+            // 200Hz 阻尼跟踪小蓝条位置，由 GPU 合成器硬件加速执行 Translation 平移
+            if (_isIndicatorAnimating)
+            {
+                double indFactor = 1.0 - Math.Exp(-18.0 * dt);
+                _curIndicatorY += (_targetIndicatorY - _curIndicatorY) * indFactor;
 
-            if (isDone)
+                if (Math.Abs(_targetIndicatorY - _curIndicatorY) < 0.3)
+                {
+                    _curIndicatorY = _targetIndicatorY;
+                    _isIndicatorAnimating = false;
+                }
+
+                ApplyIndicatorPosition();
+            }
+
+            // 右侧面板 200Hz 三次贝塞尔缓动浮入 (FadeIn + SlideUp)
+            if (_isPanelTransitioning && _currentTransitionPanel != null)
+            {
+                _panelAnimTime += dt;
+                double progress = Math.Min(1.0, _panelAnimTime / 0.22); // 220ms 经典时长
+                // Cubic EaseOut 算子
+                double ease = 1.0 - Math.Pow(1.0 - progress, 3);
+
+                _currentTransitionPanel.Opacity = ease;
+                _currentTransitionPanel.Translation = new System.Numerics.Vector3(0, (float)((1.0 - ease) * 16.0), 0);
+
+                if (progress >= 1.0)
+                {
+                    _currentTransitionPanel.Opacity = 1.0;
+                    _currentTransitionPanel.Translation = System.Numerics.Vector3.Zero;
+                    _isPanelTransitioning = false;
+                }
+            }
+
+            bool isProgressDone = Math.Abs(_targetInst - _curInst) < 0.002 &&
+                                  Math.Abs(_targetMount - _curMount) < 0.002 &&
+                                  Math.Abs(_targetUnmount - _curUnmount) < 0.002 &&
+                                  Math.Abs(_targetErr - _curErr) < 0.002;
+
+            if (isProgressDone && !_isIndicatorAnimating && !_isPanelTransitioning)
             {
                 _curInst = _targetInst;
                 _curMount = _targetMount;

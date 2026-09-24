@@ -14,12 +14,17 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
+    <Grid x:Name="RootWindowGrid">
         <NavigationView x:Name="NavView"
                         PaneDisplayMode="Left"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
-                        SelectionChanged="NavView_SelectionChanged">
+                        SelectionChanged="NavView_SelectionChanged"
+                        Loaded="NavView_Loaded">
+            <NavigationView.Resources>
+                <!-- 将原生容易掉帧且跨项硬编码淡出消失的旧指示条彻底隐形 -->
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="字幕字体挂载" Tag="AssPage" IsSelected="True">
                     <NavigationViewItem.Icon>
@@ -220,5 +225,15 @@
                 </Grid>
             </Grid>
         </NavigationView>
+
+        <!-- 自定义 200Hz GPU 硬件加速连续无缝滑行动画条 -->
+        <Border x:Name="CustomIndicator"
+                Width="3" Height="16"
+                CornerRadius="1.5"
+                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                IsHitTestVisible="False"
+                Opacity="0" />
     </Grid>
 </Window>
