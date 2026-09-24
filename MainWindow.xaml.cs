@@ -57,6 +57,11 @@ namespace FontAutoLoader
         private double _panelAnimTime = 0;
         private bool _isPanelTransitioning = false;
 
+        // 左侧字体状态面板 200Hz 平滑滑动折叠动画状态
+        private double _curDrawerWidth = 360;
+        private double _targetDrawerWidth = 360;
+        private bool _isDrawerAnimating = false;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -135,18 +140,16 @@ namespace FontAutoLoader
         private void ToggleLeftDrawer_Click(object sender, RoutedEventArgs e)
         {
             _isLeftDrawerExpanded = !_isLeftDrawerExpanded;
+            _targetDrawerWidth = _isLeftDrawerExpanded ? 360 : 0;
+
             if (_isLeftDrawerExpanded)
             {
-                LeftColDef.Width = new GridLength(360);
                 LeftFontSidePanel.Visibility = Visibility.Visible;
                 BtnExpandDrawer.Visibility = Visibility.Collapsed;
             }
-            else
-            {
-                LeftColDef.Width = new GridLength(0);
-                LeftFontSidePanel.Visibility = Visibility.Collapsed;
-                BtnExpandDrawer.Visibility = Visibility.Visible;
-            }
+
+            _isDrawerAnimating = true;
+            StartVsyncTracker();
         }
 
         private void NavView_Loaded(object sender, RoutedEventArgs e)
@@ -355,12 +358,37 @@ namespace FontAutoLoader
                 }
             }
 
+            // 200Hz 连续阻尼滑动折叠/展开左侧抽屉面板
+            if (_isDrawerAnimating)
+            {
+                double drawerFactor = 1.0 - Math.Exp(-16.0 * dt);
+                _curDrawerWidth += (_targetDrawerWidth - _curDrawerWidth) * drawerFactor;
+
+                LeftFontSidePanel.Opacity = Math.Clamp(_curDrawerWidth / 360.0, 0.0, 1.0);
+                LeftColDef.Width = new GridLength(Math.Max(0, _curDrawerWidth));
+
+                if (Math.Abs(_targetDrawerWidth - _curDrawerWidth) < 0.8)
+                {
+                    _curDrawerWidth = _targetDrawerWidth;
+                    LeftColDef.Width = new GridLength(_targetDrawerWidth);
+                    LeftFontSidePanel.Opacity = _isLeftDrawerExpanded ? 1.0 : 0.0;
+
+                    if (!_isLeftDrawerExpanded)
+                    {
+                        LeftFontSidePanel.Visibility = Visibility.Collapsed;
+                        BtnExpandDrawer.Visibility = Visibility.Visible;
+                    }
+
+                    _isDrawerAnimating = false;
+                }
+            }
+
             bool isProgressDone = Math.Abs(_targetInst - _curInst) < 0.002 &&
                                   Math.Abs(_targetMount - _curMount) < 0.002 &&
                                   Math.Abs(_targetUnmount - _curUnmount) < 0.002 &&
                                   Math.Abs(_targetErr - _curErr) < 0.002;
 
-            if (isProgressDone && !_isIndicatorAnimating && !_isPanelTransitioning)
+            if (isProgressDone && !_isIndicatorAnimating && !_isPanelTransitioning && !_isDrawerAnimating)
             {
                 _curInst = _targetInst;
                 _curMount = _targetMount;

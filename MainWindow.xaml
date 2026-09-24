@@ -51,8 +51,8 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- 左半边：折叠展示已临时挂载与系统已安装字体 -->
-                    <Grid x:Name="LeftFontSidePanel" Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+                    <!-- 左半边：折叠展示已临时挂载与系统已安装字体（全局纯粹顶对齐） -->
+                    <Grid x:Name="LeftFontSidePanel" Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0" VerticalAlignment="Top">
                         <!-- 侧栏顶部标题与向左收起按钮 -->
                         <Grid Grid.Row="0" Margin="0,0,0,8">
                             <TextBlock Text="字体状态面板" FontSize="13" FontWeight="SemiBold" Opacity="0.6" VerticalAlignment="Center" />
@@ -61,45 +61,61 @@
                             </Button>
                         </Grid>
 
-                        <Grid Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="12">
-                        <!-- 上折叠面板：临时挂载字体（Auto 高度，收起时自动腾出空间） -->
-                        <Expander Grid.Row="0" Header="当前临时挂载的字体" IsExpanded="True"
-                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                            <ListView x:Name="MountedFontListView" SelectionMode="None" MaxHeight="260" HorizontalAlignment="Stretch">
-                                <ListView.ItemContainerStyle>
-                                    <Style TargetType="ListViewItem">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="Padding" Value="0,2,0,2" />
-                                    </Style>
-                                </ListView.ItemContainerStyle>
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="x:String">
-                                        <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch">
-                                            <TextBlock Grid.Column="0" Text="{x:Bind}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                            <Button Grid.Column="1" Content="卸载" FontSize="11" Padding="6,2,6,2" Click="UnloadMountedItem_Click" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </Expander>
+                        <!-- 空间全利用弹性网格：彻底释放 MaxHeight 枷锁，支持一路撑满至窗口底部 -->
+                        <Grid Grid.Row="1" x:Name="LeftExpandersGrid" RowSpacing="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition x:Name="RowDefMounted" Height="Auto" />
+                                <RowDefinition x:Name="RowDefSystem" Height="*" />
+                            </Grid.RowDefinitions>
 
-                        <!-- 下折叠面板：系统已安装字体（* 填充剩余空间，随上方收起自动向上扩展补位） -->
-                        <Expander Grid.Row="1" Header="系统已安装字体列表" IsExpanded="True"
-                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalAlignment="Stretch">
-                            <ListView x:Name="SystemFontListView" SelectionMode="None" HorizontalAlignment="Stretch">
-                                <ListView.ItemContainerStyle>
-                                    <Style TargetType="ListViewItem">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="Padding" Value="0,2,0,2" />
-                                    </Style>
-                                </ListView.ItemContainerStyle>
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="x:String">
-                                        <TextBlock Text="{x:Bind}" FontSize="12" TextTrimming="CharacterEllipsis" HorizontalAlignment="Stretch" />
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </Expander>
+                            <!-- 上折叠面板：临时挂载字体 -->
+                            <Expander x:Name="ExpanderMounted" Grid.Row="0" Header="当前临时挂载的字体" IsExpanded="True"
+                                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalAlignment="Stretch" MaxHeight="350">
+                                <ListView x:Name="MountedFontListView" SelectionMode="None" HorizontalAlignment="Stretch">
+                                    <ListView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel />
+                                        </ItemsPanelTemplate>
+                                    </ListView.ItemsPanel>
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Padding" Value="0,2,0,2" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch" Margin="0,0,14,0">
+                                                <TextBlock Grid.Column="0" Text="{x:Bind}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Content="卸载" FontSize="11" Padding="6,2,6,2" Click="UnloadMountedItem_Click" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Expander>
+
+                            <!-- 下折叠面板：系统已安装字体 -->
+                            <Expander x:Name="ExpanderSystem" Grid.Row="1" Header="系统已安装字体列表" IsExpanded="True"
+                                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalAlignment="Stretch">
+                                <ListView x:Name="SystemFontListView" SelectionMode="None" HorizontalAlignment="Stretch">
+                                    <ListView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel />
+                                        </ItemsPanelTemplate>
+                                    </ListView.ItemsPanel>
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Padding" Value="0,2,0,2" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <TextBlock Text="{x:Bind}" FontSize="12" TextTrimming="CharacterEllipsis" HorizontalAlignment="Stretch" />
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Expander>
                         </Grid>
                     </Grid>
 
@@ -195,6 +211,11 @@
 
                         <!-- 视图 2：按 ASS 文件分组折叠列表（默认收起，点击展开） -->
                         <ListView Grid.Row="1" x:Name="AssGroupedListView" Visibility="Collapsed" SelectionMode="None">
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel />
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -203,7 +224,8 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:AssFileGroup">
-                                    <Expander IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- 压紧 Content 顶部 Padding，使展开内容与标题紧凑优雅衔接 -->
+                                    <Expander IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12,2,12,6">
                                         <Expander.Header>
                                             <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch" Margin="0,4,0,4">
                                                 <StackPanel Grid.Column="0" Spacing="2">
@@ -217,7 +239,7 @@
                                             </Grid>
                                         </Expander.Header>
                                         <Expander.Content>
-                                            <ItemsControl ItemsSource="{x:Bind Fonts}" Margin="0,8,0,4">
+                                            <ItemsControl ItemsSource="{x:Bind Fonts}" Margin="0,2,0,2">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="models:AssFontItem">
                                                         <Border Margin="0,3,0,3" Padding="12,0,12,0" MinHeight="62" CornerRadius="8"
