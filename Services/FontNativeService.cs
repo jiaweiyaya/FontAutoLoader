@@ -170,4 +170,114 @@ public static class FontNativeService
 
         return installed;
     }
+
+    /// <summary>
+    /// 获取系统中已安装字体的完整元数据（包含注册表键名、文件物理路径、是否属于当前用户等）
+    /// </summary>
+    public static List<InstalledFontInfo> GetSystemInstalledFontInfos()
+    {
+        var result = new List<InstalledFontInfo>();
+        string winFontsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+        string userFontsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Microsoft\Windows\Fonts");
+
+        string[] registryKeys =
+        [
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Fonts"
+        ];
+
+        foreach (var keyPath in registryKeys)
+        {
+            // 1. 本机全局字体 (HKLM)
+            try
+            {
+                using var hklmKey = Registry.LocalMachine.OpenSubKey(keyPath);
+                if (hklmKey != null)
+                {
+                    foreach (var val in hklmKey.GetValueNames())
+                    {
+                        string rawFileName = hklmKey.GetValue(val)?.ToString() ?? string.Empty;
+                        string cleanName = val.Replace(" (TrueType)", "", StringComparison.OrdinalIgnoreCase)
+                                              .Replace(" (OpenType)", "", StringComparison.OrdinalIgnoreCase)
+                                              .Trim();
+                        string fullPath = Path.IsPathRooted(rawFileName) ? rawFileName : Path.Combine(winFontsDir, rawFileName);
+
+                        result.Add(new InstalledFontInfo(cleanName, val, rawFileName, fullPath, false));
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            // 2. 当前用户安装字体 (HKCU)
+            try
+            {
+                using var hkcuKey = Registry.CurrentUser.OpenSubKey(keyPath);
+                if (hkcuKey != null)
+                {
+                    foreach (var val in hkcuKey.GetValueNames())
+                    {
+                        string rawFileName = hkcuKey.GetValue(val)?.ToString() ?? string.Empty;
+                        string cleanName = val.Replace(" (TrueType)", "", StringComparison.OrdinalIgnoreCase)
+                                              .Replace(" (OpenType)", "", StringComparison.OrdinalIgnoreCase)
+                                              .Trim();
+                        string fullPath = Path.IsPathRooted(rawFileName) ? rawFileName : Path.Combine(userFontsDir, rawFileName);
+
+                        result.Add(new InstalledFontInfo(cleanName, val, rawFileName, fullPath, true));
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 从系统中卸载并删除字体文件及注册表项
+    /// </summary>
+    public static bool DeleteSystemInstalledFont(InstalledFontInfo info, out string error)
+    {
+        error = string.Empty;
+        string keyPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts";
+        try
+        {
+            // 1. 从注册表中注销
+            if (info.IsCurrentUser)
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(keyPath, true);
+                key?.DeleteValue(info.ValueName, false);
+            }
+            else
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(keyPath, true);
+                key?.DeleteValue(info.ValueName, false);
+            }
+
+            // 2. 尝试删除物理文件
+            if (!string.IsNullOrEmpty(info.FilePath) && File.Exists(info.FilePath))
+            {
+                File.Delete(info.FilePath);
+            }
+
+            NotifySystemFontChange();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
 }
+
+public record InstalledFontInfo(
+    string FontName,
+    string ValueName,
+    string FontFileName,
+    string FilePath,
+    bool IsCurrentUser
+);

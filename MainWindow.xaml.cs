@@ -36,7 +36,8 @@ namespace FontAutoLoader
         private readonly ObservableCollection<FontRecord> _searchResults = new();
         private readonly ObservableCollection<string> _folders = new();
         private readonly ObservableCollection<string> _mountedFonts = new();
-        private readonly ObservableCollection<string> _systemFonts = new();
+        private readonly ObservableCollection<InstalledFontDisplayItem> _installedDisplayFonts = new();
+        private readonly List<InstalledFontDisplayItem> _allInstalledFontsCache = new();
         private HashSet<string> _systemInstalledSet = new(StringComparer.OrdinalIgnoreCase);
 
         // 200Hz 屏幕垂直同步阻尼追踪动画状态
@@ -73,10 +74,11 @@ namespace FontAutoLoader
             SearchListView.ItemsSource = _searchResults;
             FolderListView.ItemsSource = _folders;
             MountedFontListView.ItemsSource = _mountedFonts;
-            SystemFontListView.ItemsSource = _systemFonts;
+            InstalledFontsListView.ItemsSource = _installedDisplayFonts;
 
             LoadFolders();
             RefreshSystemFonts();
+            LoadInstalledFontManagementList();
             RefreshMountedFonts();
 
             // 拦截应用窗口关闭事件，以便执行带进度条的平滑卸载
@@ -177,6 +179,7 @@ namespace FontAutoLoader
             {
                 "AssPage" => AssPagePanel,
                 "SearchPage" => SearchPagePanel,
+                "InstalledPage" => InstalledPagePanel,
                 "FolderPage" => FolderPagePanel,
                 _ => AssPagePanel
             };
@@ -184,6 +187,7 @@ namespace FontAutoLoader
             // 隐藏其余面板
             AssPagePanel.Visibility = (target == AssPagePanel) ? Visibility.Visible : Visibility.Collapsed;
             SearchPagePanel.Visibility = (target == SearchPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+            InstalledPagePanel.Visibility = (target == InstalledPagePanel) ? Visibility.Visible : Visibility.Collapsed;
             FolderPagePanel.Visibility = (target == FolderPagePanel) ? Visibility.Visible : Visibility.Collapsed;
 
             // 初始化新面板在下方向上微移 16px 且透明
@@ -246,11 +250,6 @@ namespace FontAutoLoader
         private void RefreshSystemFonts()
         {
             _systemInstalledSet = FontNativeService.GetSystemInstalledFontNames();
-            _systemFonts.Clear();
-            foreach (var font in _systemInstalledSet.OrderBy(x => x))
-            {
-                _systemFonts.Add(font);
-            }
         }
 
         private void RefreshMountedFonts()
@@ -775,6 +774,261 @@ namespace FontAutoLoader
                 font.IsLoaded = false;
             }
             ScanStatusText.Text = "已将所有挂载在系统中的临时字体卸载释放完毕。";
+        }
+
+        private void RefreshInstalledFonts_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshSystemFonts();
+            LoadInstalledFontManagementList();
+        }
+
+        private void LoadInstalledFontManagementList()
+        {
+            _allInstalledFontsCache.Clear();
+            var list = FontNativeService.GetSystemInstalledFontInfos();
+
+            foreach (var info in list.OrderBy(f => f.FontName))
+            {
+                var risk = EvaluateFontRisk(info.FontName);
+                _allInstalledFontsCache.Add(new InstalledFontDisplayItem(info, risk));
+            }
+
+            ApplyInstalledFontFilter();
+        }
+
+        private void SearchInstalledBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            ApplyInstalledFontFilter();
+        }
+
+        private void ApplyInstalledFontFilter()
+        {
+            string keyword = SearchInstalledBox?.Text.Trim() ?? string.Empty;
+            _installedDisplayFonts.Clear();
+
+            var matches = string.IsNullOrEmpty(keyword)
+                ? _allInstalledFontsCache
+                : _allInstalledFontsCache.Where(f =>
+                    f.FontName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    f.Info.FontFileName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    f.Info.FilePath.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var item in matches)
+            {
+                _installedDisplayFonts.Add(item);
+            }
+
+            if (TxtInstalledFontSummary != null)
+            {
+                TxtInstalledFontSummary.Text = string.IsNullOrEmpty(keyword)
+                    ? $"共读取到 {_allInstalledFontsCache.Count} 个已安装字体，包含系统核心/预装与自定义扩展。"
+                    : $"搜索到 {_installedDisplayFonts.Count} 个匹配项 (全系统共 {_allInstalledFontsCache.Count} 个)。";
+            }
+        }
+
+        private static FontRiskLevel EvaluateFontRisk(string fontName)
+        {
+            // Windows 核心必需字体列表（红色级别：删了系统界面会崩或乱码）
+            string[] criticalKeys =
+            [
+                "Segoe UI", "Segoe MDL2", "Segoe Fluent", "Segoe UI Emoji", "Segoe UI Symbol", "Segoe UI Historic",
+                "Marlett", "Symbol", "Wingdings", "Webdings",
+                "Tahoma", "Arial", "Courier New", "Times New Roman", "Verdana",
+                "Microsoft YaHei", "微软雅黑", "SimSun", "NSimSun", "宋体", "新宋体",
+                "MS Gothic", "MS PGothic", "MS UI Gothic", "Meiryo", "Yu Gothic",
+                "Malgun Gothic", "Batang", "Gulim",
+                "MingLiU", "PMingLiU", "Microsoft JhengHei", "微软正黑体"
+            ];
+
+            // Windows 预装/推荐保留字体列表（黄色级别：不建议删除，可能导致特定程序或网页显示异常）
+            string[] warningKeys =
+            [
+                "SimHei", "黑体", "KaiTi", "楷体", "FangSong", "仿宋",
+                "Calibri", "Cambria", "Candara", "Consolas", "Constantia", "Corbel",
+                "Comic Sans", "Impact", "Trebuchet", "Georgia", "Palatino",
+                "Segoe Print", "Segoe Script", "Bahnschrift", "Ebrima", "Gadugi",
+                "Leelawadee", "Nirmala", "Ink Free", "Gabriola", "Sitka", "Sylfaen"
+            ];
+
+            foreach (var k in criticalKeys)
+            {
+                if (fontName.Contains(k, StringComparison.OrdinalIgnoreCase))
+                {
+                    return FontRiskLevel.Critical;
+                }
+            }
+
+            foreach (var k in warningKeys)
+            {
+                if (fontName.Contains(k, StringComparison.OrdinalIgnoreCase))
+                {
+                    return FontRiskLevel.Warning;
+                }
+            }
+
+            return FontRiskLevel.Safe;
+        }
+
+        private async void DeleteInstalledFont_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.DataContext is not InstalledFontDisplayItem item)
+            {
+                return;
+            }
+
+            ContentDialog dialog = new ContentDialog
+            {
+                XamlRoot = this.Content.XamlRoot,
+                CloseButtonText = "取消"
+            };
+
+            if (item.Risk == FontRiskLevel.Critical)
+            {
+                // 红色高危警示弹窗
+                dialog.Title = "危险警告：系统核心必需字体";
+                dialog.PrimaryButtonText = "执意强行删除";
+                dialog.DefaultButton = ContentDialogButton.Close;
+
+                var sp = new StackPanel { Spacing = 10 };
+                var headerText = new TextBlock
+                {
+                    Text = $"【严重风险】字体 \"{item.FontName}\" 是 Windows 系统必需的核心依赖字体！",
+                    FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 229, 57, 53)),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                var tipText = new TextBlock
+                {
+                    Text = "删除此字体将极大概率导致 Windows 窗口按钮乱码、系统设置崩溃或桌面文字无法正常渲染！\n\n强烈建议不要删除该字体。您确定要继续强行尝试删除它吗？",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9
+                };
+                sp.Children.Add(headerText);
+                sp.Children.Add(tipText);
+                dialog.Content = sp;
+            }
+            else if (item.Risk == FontRiskLevel.Warning)
+            {
+                // 黄色提示警示弹窗
+                dialog.Title = "提示：系统默认推荐字体";
+                dialog.PrimaryButtonText = "确认删除";
+                dialog.DefaultButton = ContentDialogButton.Close;
+
+                var sp = new StackPanel { Spacing = 10 };
+                var headerText = new TextBlock
+                {
+                    Text = $"【注意】字体 \"{item.FontName}\" 是 Windows 系统预装的默认字体或常用办公字体。",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 251, 192, 45)),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                var tipText = new TextBlock
+                {
+                    Text = "删除此字体可能导致部分软件、网页排版或特定字幕显示异常。\n\n您确定要从系统中将其移除吗？",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9
+                };
+                sp.Children.Add(headerText);
+                sp.Children.Add(tipText);
+                dialog.Content = sp;
+            }
+            else
+            {
+                // 普通安全确认弹窗
+                dialog.Title = "确认删除字体";
+                dialog.PrimaryButtonText = "删除";
+                dialog.DefaultButton = ContentDialogButton.Primary;
+                dialog.Content = new TextBlock
+                {
+                    Text = $"确定要从系统中卸载并删除字体 \"{item.FontName}\" 吗？此操作将移除该字体的注册表引用及物理文件。",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9
+                };
+            }
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                bool ok = FontNativeService.DeleteSystemInstalledFont(item.Info, out string error);
+                if (ok)
+                {
+                    _allInstalledFontsCache.Remove(item);
+                    _installedDisplayFonts.Remove(item);
+                    RefreshSystemFonts();
+                    TxtInstalledFontSummary.Text = $"已成功从系统中移除字体：{item.FontName}";
+                }
+                else
+                {
+                    var errDialog = new ContentDialog
+                    {
+                        Title = "删除失败",
+                        Content = new TextBlock
+                        {
+                            Text = $"无法删除字体 \"{item.FontName}\"。\n\n系统返回错误信息：\n{error}\n\n可能原因：操作需要管理员权限（系统盘 Windows\\Fonts 目录通常受只读保护），或该字体正在被系统/播放器程序占用。",
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await errDialog.ShowAsync();
+                }
+            }
+        }
+    }
+
+    public enum FontRiskLevel
+    {
+        Critical,
+        Warning,
+        Safe
+    }
+
+    public class InstalledFontDisplayItem
+    {
+        public InstalledFontInfo Info { get; }
+        public FontRiskLevel Risk { get; }
+
+        public string FontName => Info.FontName;
+        public string FileInfoText => $"{Info.FontFileName} • {(Info.IsCurrentUser ? "当前用户安装" : "系统全局安装")}";
+
+        public string RiskTagText => Risk switch
+        {
+            FontRiskLevel.Critical => "系统核心必需 (严禁删除)",
+            FontRiskLevel.Warning => "系统默认预装 (不建议删除)",
+            _ => "扩展/用户字体 (安全)"
+        };
+
+        public SolidColorBrush BadgeBackgroundBrush => Risk switch
+        {
+            FontRiskLevel.Critical => new SolidColorBrush(Windows.UI.Color.FromArgb(255, 211, 47, 47)),
+            FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(255, 251, 192, 45)),
+            _ => new SolidColorBrush(Windows.UI.Color.FromArgb(255, 56, 142, 60))
+        };
+
+        public SolidColorBrush BadgeForegroundBrush => Risk switch
+        {
+            FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(255, 33, 33, 33)),
+            _ => new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255))
+        };
+
+        public SolidColorBrush CardBackgroundBrush => Risk switch
+        {
+            FontRiskLevel.Critical => new SolidColorBrush(Windows.UI.Color.FromArgb(35, 211, 47, 47)),
+            FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(25, 251, 192, 45)),
+            _ => new SolidColorBrush(Windows.UI.Color.FromArgb(10, 255, 255, 255))
+        };
+
+        public SolidColorBrush BorderBrush => Risk switch
+        {
+            FontRiskLevel.Critical => new SolidColorBrush(Windows.UI.Color.FromArgb(140, 211, 47, 47)),
+            FontRiskLevel.Warning => new SolidColorBrush(Windows.UI.Color.FromArgb(120, 251, 192, 45)),
+            _ => new SolidColorBrush(Windows.UI.Color.FromArgb(35, 128, 128, 128))
+        };
+
+        public InstalledFontDisplayItem(InstalledFontInfo info, FontRiskLevel risk)
+        {
+            Info = info;
+            Risk = risk;
         }
     }
 }
