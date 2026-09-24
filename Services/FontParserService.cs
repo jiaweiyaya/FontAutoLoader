@@ -191,13 +191,17 @@ public static class FontParserService
                 {
                     text = Encoding.ASCII.GetString(bytes);
                 }
-                else if (encodingId == 25) // Mac 简体中文
+                else if (encodingId == 1) // Mac 日文 Shift-JIS
                 {
-                    text = Encoding.GetEncoding(936).GetString(bytes);
+                    text = Encoding.GetEncoding(932).GetString(bytes);
                 }
-                else if (encodingId == 2) // Mac 繁体中文
+                else if (encodingId == 2) // Mac 繁体中文 Big5
                 {
                     text = Encoding.GetEncoding(950).GetString(bytes);
+                }
+                else if (encodingId == 25) // Mac 简体中文 GBK
+                {
+                    text = Encoding.GetEncoding(936).GetString(bytes);
                 }
                 else
                 {
@@ -211,8 +215,8 @@ public static class FontParserService
 
             text = text.Replace("\0", "").Trim();
 
-            // 过滤掉包含不可解码字符()或控制字符的乱码串
-            if (text.Contains('\uFFFD') || text.Any(c => char.IsControl(c) && c != '\t'))
+            // 过滤掉包含不可解码字符、连续问号或控制字符的损坏名称
+            if (text.Contains('\uFFFD') || text.Contains("???") || text.Any(c => char.IsControl(c) && c != '\t'))
             {
                 return string.Empty;
             }

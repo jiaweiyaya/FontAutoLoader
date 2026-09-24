@@ -15,6 +15,7 @@ public class DatabaseService
 
     private static readonly string DbPath = Path.Combine(DbFolder, "fonts.db");
     private static readonly string ConnectionString = $"Data Source={DbPath}";
+    private const int CurrentDbVersion = 2; // 当前数据库结构版本号
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -48,7 +49,9 @@ public class DatabaseService
                 FilePath TEXT NOT NULL,
                 FontName TEXT NOT NULL,
                 FamilyName TEXT NOT NULL,
-                Format TEXT NOT NULL
+                Format TEXT NOT NULL,
+                IsCorrupted INTEGER DEFAULT 0,
+                HasWarning INTEGER DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS idx_fonts_name ON Fonts(FontName);
@@ -100,6 +103,52 @@ public class DatabaseService
         return command.ExecuteNonQuery() > 0;
     }
 
+    private int GetDatabaseVersion()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(ConnectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA user_version;";
+            var result = command.ExecuteScalar();
+            return result != null ? Convert.ToInt32(result) : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private void SetDatabaseVersion(int version)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA user_version = {version};";
+        command.ExecuteNonQuery();
+    }
+
+    private void RecreateDatabase(List<string> backupFolders)
+    {
+        // 清理所有连接池，防止删除文件时遭遇文件占用异常
+        SqliteConnection.ClearAllPools();
+
+        if (File.Exists(DbPath))
+        {
+            File.Delete(DbPath);
+        }
+
+        InitDatabase();
+        SetDatabaseVersion(CurrentDbVersion);
+
+        // 重新灌入原先已添加的字体目录
+        foreach (var folder in backupFolders)
+        {
+            AddFolder(folder);
+        }
+    }
+
     /// <summary>
     /// 手动重新扫描所有已配置的文件夹，并全量重建字体索引库
     /// </summary>
@@ -108,6 +157,15 @@ public class DatabaseService
         await Task.Run(() =>
         {
             var folders = GetFolders();
+
+            // 检查数据库版本是否与当前代码匹配，若不同则直接删除旧库并重建全新数据库
+            if (GetDatabaseVersion() != CurrentDbVersion)
+            {
+                progress?.Report("检测到数据库版本变更，正在自动重建全新结构数据库...");
+                RecreateDatabase(folders);
+                folders = GetFolders();
+            }
+
             var discoveredFonts = new List<FontRecord>();
 
             progress?.Report("正在枚举文件夹内的字体文件...");
@@ -131,26 +189,33 @@ public class DatabaseService
                             {
                                 foreach (var (family, full) in namesList)
                                 {
+                                    string resolvedName = string.IsNullOrWhiteSpace(full) ? family : full;
+                                    // 名称中存在问号或未知字符但未彻底损坏的标记为警告标黄
+                                    bool hasWarning = resolvedName.Contains('?') || family.Contains('?');
+
                                     discoveredFonts.Add(new FontRecord
                                     {
                                         FilePath = file,
                                         FamilyName = family,
-                                        FontName = string.IsNullOrWhiteSpace(full) ? family : full,
-                                        Format = ext.TrimStart('.').ToUpperInvariant()
+                                        FontName = resolvedName,
+                                        Format = ext.TrimStart('.').ToUpperInvariant(),
+                                        HasWarning = hasWarning,
+                                        IsCorrupted = false
                                     });
                                 }
                             }
                             else
                             {
-                                // 兜底：如果解析不到内部名称，标记为损坏并显示警告
+                                // 彻底无法解析元数据，退回文件名兜底并标红
                                 string fallbackName = Path.GetFileNameWithoutExtension(file);
                                 discoveredFonts.Add(new FontRecord
                                 {
                                     FilePath = file,
-                                    FamilyName = "无法识别的字体家族",
+                                    FamilyName = "无法读取内部字体名称",
                                     FontName = fallbackName,
                                     Format = ext.TrimStart('.').ToUpperInvariant(),
-                                    IsCorrupted = true
+                                    IsCorrupted = true,
+                                    HasWarning = false
                                 });
                             }
                         }
@@ -176,14 +241,16 @@ public class DatabaseService
             using var insertCommand = connection.CreateCommand();
             insertCommand.Transaction = transaction;
             insertCommand.CommandText = @"
-                INSERT INTO Fonts (FilePath, FontName, FamilyName, Format)
-                VALUES ($filePath, $fontName, $familyName, $format);
+                INSERT INTO Fonts (FilePath, FontName, FamilyName, Format, IsCorrupted, HasWarning)
+                VALUES ($filePath, $fontName, $familyName, $format, $isCorrupted, $hasWarning);
             ";
 
             var paramPath = insertCommand.Parameters.Add("$filePath", SqliteType.Text);
             var paramName = insertCommand.Parameters.Add("$fontName", SqliteType.Text);
             var paramFamily = insertCommand.Parameters.Add("$familyName", SqliteType.Text);
             var paramFormat = insertCommand.Parameters.Add("$format", SqliteType.Text);
+            var paramCorrupted = insertCommand.Parameters.Add("$isCorrupted", SqliteType.Integer);
+            var paramWarning = insertCommand.Parameters.Add("$hasWarning", SqliteType.Integer);
 
             foreach (var font in discoveredFonts)
             {
@@ -191,6 +258,8 @@ public class DatabaseService
                 paramName.Value = font.FontName;
                 paramFamily.Value = font.FamilyName;
                 paramFormat.Value = font.Format;
+                paramCorrupted.Value = font.IsCorrupted ? 1 : 0;
+                paramWarning.Value = font.HasWarning ? 1 : 0;
                 insertCommand.ExecuteNonQuery();
             }
 
@@ -215,7 +284,7 @@ public class DatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, FilePath, FontName, FamilyName, Format 
+            SELECT Id, FilePath, FontName, FamilyName, Format, IsCorrupted, HasWarning
             FROM Fonts 
             WHERE FontName LIKE $kw OR FamilyName LIKE $kw OR FilePath LIKE $kw
             LIMIT 200;
@@ -231,7 +300,9 @@ public class DatabaseService
                 FilePath = reader.GetString(1),
                 FontName = reader.GetString(2),
                 FamilyName = reader.GetString(3),
-                Format = reader.GetString(4)
+                Format = reader.GetString(4),
+                IsCorrupted = reader.GetInt32(5) == 1,
+                HasWarning = reader.GetInt32(6) == 1
             });
         }
 
