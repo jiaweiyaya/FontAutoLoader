@@ -38,6 +38,13 @@ namespace FontAutoLoader
         private readonly ObservableCollection<string> _systemFonts = new();
         private HashSet<string> _systemInstalledSet = new(StringComparer.OrdinalIgnoreCase);
 
+        // 200Hz 屏幕垂直同步阻尼追踪动画状态
+        private double _curInst = 0, _curMount = 0, _curUnmount = 1, _curErr = 0;
+        private double _targetInst = 0, _targetMount = 0, _targetUnmount = 1, _targetErr = 0;
+        private bool _isRenderingHooked = false;
+        private readonly System.Diagnostics.Stopwatch _animStopwatch = new();
+        private TimeSpan _lastRenderingTime;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -153,10 +160,11 @@ namespace FontAutoLoader
             int total = _assFonts.Count;
             if (total == 0)
             {
-                ColInstalled.Width = new GridLength(0, GridUnitType.Star);
-                ColMounted.Width = new GridLength(0, GridUnitType.Star);
-                ColUnmounted.Width = new GridLength(1, GridUnitType.Star);
-                ColError.Width = new GridLength(0, GridUnitType.Star);
+                _targetInst = 0;
+                _targetMount = 0;
+                _targetUnmount = 1;
+                _targetErr = 0;
+                StartVsyncTracker();
                 MountProgressCountText.Text = "0 / 0 / 0";
                 return;
             }
@@ -164,16 +172,67 @@ namespace FontAutoLoader
             int installed = _assFonts.Count(f => f.IsSystemInstalled);
             int mounted = _assFonts.Count(f => f.IsLoaded && !f.IsSystemInstalled);
             int error = _assFonts.Count(f => !f.IsFound || f.HasError);
-            int unmounted = total - installed - mounted - error;
-            if (unmounted < 0) unmounted = 0;
+            int unmounted = Math.Max(0, total - installed - mounted - error);
 
-            ColInstalled.Width = new GridLength(installed, GridUnitType.Star);
-            ColMounted.Width = new GridLength(mounted, GridUnitType.Star);
-            ColUnmounted.Width = new GridLength(unmounted, GridUnitType.Star);
-            ColError.Width = new GridLength(error, GridUnitType.Star);
-
-            // 右上角格式：系统已安装 / 目前已挂载 / 字幕中的总字体数
             MountProgressCountText.Text = $"{installed} / {mounted} / {total}";
+
+            _targetInst = installed;
+            _targetMount = mounted;
+            _targetUnmount = unmounted;
+            _targetErr = error;
+
+            StartVsyncTracker();
+        }
+
+        private void StartVsyncTracker()
+        {
+            if (!_isRenderingHooked)
+            {
+                _isRenderingHooked = true;
+                _animStopwatch.Restart();
+                _lastRenderingTime = _animStopwatch.Elapsed;
+                CompositionTarget.Rendering += OnVsyncRendering;
+            }
+        }
+
+        private void OnVsyncRendering(object? sender, object e)
+        {
+            var now = _animStopwatch.Elapsed;
+            double dt = (now - _lastRenderingTime).TotalSeconds;
+            _lastRenderingTime = now;
+
+            if (dt > 0.05) dt = 0.05;
+            if (dt <= 0) return;
+
+            // 高帧率阻尼平滑跟踪算子（自动吃满200Hz等高刷新率屏幕）
+            double factor = 1.0 - Math.Exp(-14.0 * dt);
+
+            _curInst += (_targetInst - _curInst) * factor;
+            _curMount += (_targetMount - _curMount) * factor;
+            _curUnmount += (_targetUnmount - _curUnmount) * factor;
+            _curErr += (_targetErr - _curErr) * factor;
+
+            bool isDone = Math.Abs(_targetInst - _curInst) < 0.002 &&
+                          Math.Abs(_targetMount - _curMount) < 0.002 &&
+                          Math.Abs(_targetUnmount - _curUnmount) < 0.002 &&
+                          Math.Abs(_targetErr - _curErr) < 0.002;
+
+            if (isDone)
+            {
+                _curInst = _targetInst;
+                _curMount = _targetMount;
+                _curUnmount = _targetUnmount;
+                _curErr = _targetErr;
+
+                CompositionTarget.Rendering -= OnVsyncRendering;
+                _isRenderingHooked = false;
+                _animStopwatch.Stop();
+            }
+
+            ColInstalled.Width = new GridLength(Math.Max(0.0001, _curInst), GridUnitType.Star);
+            ColMounted.Width = new GridLength(Math.Max(0.0001, _curMount), GridUnitType.Star);
+            ColUnmounted.Width = new GridLength(Math.Max(0.0001, _curUnmount), GridUnitType.Star);
+            ColError.Width = new GridLength(Math.Max(0.0001, _curErr), GridUnitType.Star);
         }
 
         private void UnloadMountedItem_Click(object sender, RoutedEventArgs e)
@@ -278,7 +337,7 @@ namespace FontAutoLoader
                 }
 
                 UpdateProgressMultiBar();
-                await Task.Delay(25); // 顺畅的渲染动画
+                await Task.Delay(40); // 留足40ms给高刷阻尼自然流动推进
             }
 
             BtnMountAll.IsEnabled = true;
@@ -303,7 +362,7 @@ namespace FontAutoLoader
                 RefreshMountedFonts(); // 卸载成功后立刻实时刷新左上角列表
 
                 UpdateProgressMultiBar();
-                await Task.Delay(25);
+                await Task.Delay(40); // 留足40ms给高刷阻尼连续倒退缩减
             }
 
             AssStatusText.Text = $"卸载完成：已安全卸载 {loadedItems.Count} 个字体。";

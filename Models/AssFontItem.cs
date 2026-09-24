@@ -13,7 +13,11 @@ public partial class AssFontItem : ObservableObject
     private bool _isFound;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PathVisibility))]
     private string? _matchedFilePath;
+
+    public Microsoft.UI.Xaml.Visibility PathVisibility =>
+        string.IsNullOrEmpty(MatchedFilePath) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MatchStatusText))]
