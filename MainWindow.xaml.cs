@@ -71,6 +71,13 @@ namespace FontAutoLoader
         {
             InitializeComponent();
 
+            // 为 WinUI 3 窗口与任务栏活动实例加载独立图标
+            string iconPath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "app.ico");
+            if (System.IO.File.Exists(iconPath))
+            {
+                this.AppWindow.SetIcon(iconPath);
+            }
+
             RootWindowGrid.SizeChanged += (s, e) => UpdateCustomIndicator(false);
 
             AssFontListView.ItemsSource = _assFonts;
