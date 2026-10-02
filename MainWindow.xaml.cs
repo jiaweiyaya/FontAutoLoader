@@ -30,6 +30,12 @@ namespace FontAutoLoader
     /// </summary>
     public sealed partial class MainWindow : Window
     {
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+        private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
         private readonly DatabaseService _dbService = new();
         private readonly ObservableCollection<AssFontItem> _assFonts = new(); // 整体显示数据源(去重)
         private readonly ObservableCollection<AssFileGroup> _fileGroups = new(); // 按 ASS 文件折叠分组数据源
@@ -71,6 +77,13 @@ namespace FontAutoLoader
         {
             InitializeComponent();
 
+            // 启用原生标题栏深浅色自适应 (跟随 Windows 系统主题)
+            UpdateTitleBarTheme();
+            _uiSettings.ColorValuesChanged += (sender, args) =>
+            {
+                this.DispatcherQueue.TryEnqueue(UpdateTitleBarTheme);
+            };
+
             // 为 WinUI 3 窗口与任务栏活动实例加载独立图标
             string iconPath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "app.ico");
             if (System.IO.File.Exists(iconPath))
@@ -94,6 +107,25 @@ namespace FontAutoLoader
 
             // 拦截应用窗口关闭事件，以便执行带进度条的平滑卸载
             this.AppWindow.Closing += MainWindow_AppWindowClosing;
+        }
+
+        private void UpdateTitleBarTheme()
+        {
+            try
+            {
+                IntPtr hwnd = WindowNative.GetWindowHandle(this);
+                if (hwnd == IntPtr.Zero) return;
+
+                // 读取系统背景色亮度：RGB 均值低于 128 则为深色模式，反之为浅色模式
+                var bg = _uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
+                bool isDark = (bg.R + bg.G + bg.B) < 384;
+
+                int useDarkMode = isDark ? 1 : 0;
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+            }
+            catch
+            {
+            }
         }
 
         private bool _isForceClosing = false;
