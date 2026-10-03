@@ -87,6 +87,12 @@ namespace FontAutoLoader
 
         public MainWindow()
         {
+            // 将 WebView2 用户数据缓存目录重定向至 LocalAppData，避免打包安装在 Program Files 时因无写入权限报错
+            string webViewDataDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FontAutoLoader", "WebView2Data");
+            Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", webViewDataDir);
+
             InitializeComponent();
 
             // 启用原生标题栏深浅色自适应 (跟随 Windows 系统主题)

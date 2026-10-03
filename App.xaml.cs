@@ -34,6 +34,16 @@ namespace FontAutoLoader
         /// </summary>
         public App()
         {
+            // 在进程启动最早期将 WebView2 缓存数据目录重定向至 LocalAppData，彻底杜绝权限不足弹窗
+            string webViewDataDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FontAutoLoader", "WebView2Data");
+            if (!System.IO.Directory.Exists(webViewDataDir))
+            {
+                System.IO.Directory.CreateDirectory(webViewDataDir);
+            }
+            Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", webViewDataDir);
+
             InitializeComponent();
         }
 
