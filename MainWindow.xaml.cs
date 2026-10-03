@@ -1798,14 +1798,20 @@ namespace FontAutoLoader
         {
             if (_isAboutLoaded) return;
 
+            // 显示加载中过渡面板
+            AboutContentArea.Visibility = Visibility.Collapsed;
+            AboutHashErrorPanel.Visibility = Visibility.Collapsed;
+            AboutFileNotFoundPanel.Visibility = Visibility.Collapsed;
+            AboutLoadingPanel.Visibility = Visibility.Visible;
+            TxtAboutLoadingStatus.Text = "正在进行说明文档完整性校验...";
+
             string baseDir = System.AppContext.BaseDirectory;
             string readmePath = System.IO.Path.Combine(baseDir, "README.md");
 
-            // 1. 检查文件是否存在，缺失则精准呈现图 3 告警
+            // 1. 检查文件是否存在，缺失则呈现专属告警
             if (!System.IO.File.Exists(readmePath))
             {
-                AboutContentArea.Visibility = Visibility.Collapsed;
-                AboutHashErrorPanel.Visibility = Visibility.Collapsed;
+                AboutLoadingPanel.Visibility = Visibility.Collapsed;
                 AboutFileNotFoundPanel.Visibility = Visibility.Visible;
                 TxtSearchDirectory.Text = baseDir;
                 return;
@@ -1817,22 +1823,18 @@ namespace FontAutoLoader
             string actualHash = Convert.ToHexString(hashBytes);
             string expectedHash = (ReadmeSecurity.ExpectedHash ?? "").ToUpperInvariant();
 
-            // 3. 安全哈希比对，不匹配则精准呈现图 2 告警
+            // 3. 安全哈希比对，不匹配则呈现专属告警
             if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
             {
-                AboutContentArea.Visibility = Visibility.Collapsed;
-                AboutFileNotFoundPanel.Visibility = Visibility.Collapsed;
+                AboutLoadingPanel.Visibility = Visibility.Collapsed;
                 AboutHashErrorPanel.Visibility = Visibility.Visible;
                 TxtExpectedHash.Text = expectedHash;
                 TxtActualHash.Text = actualHash;
                 return;
             }
 
-            // 4. 校验通过：呈现 Markdown 渲染视图
-            AboutHashErrorPanel.Visibility = Visibility.Collapsed;
-            AboutFileNotFoundPanel.Visibility = Visibility.Collapsed;
-            AboutContentArea.Visibility = Visibility.Visible;
-
+            // 4. 校验通过：进入 Markdown 渲染并更新提示
+            TxtAboutLoadingStatus.Text = "文档校验通过，正在渲染文档排版...";
             string markdownText = System.Text.Encoding.UTF8.GetString(fileBytes);
             await RenderMarkdownInWebViewAsync(markdownText);
             _isAboutLoaded = true;
@@ -1845,19 +1847,62 @@ namespace FontAutoLoader
                 await AboutMarkdownWebView.EnsureCoreWebView2Async();
                 AboutMarkdownWebView.DefaultBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
 
+                var settings = AboutMarkdownWebView.CoreWebView2.Settings;
+                // 彻底禁用浏览器默认右键上下文菜单
+                settings.AreDefaultContextMenusEnabled = false;
+                // 彻底禁用所有浏览器功能快捷键（包括 F7 光标浏览、F5 刷新、F3 查找、Ctrl+P 打印等）
+                settings.AreBrowserAcceleratorKeysEnabled = false;
+                // 彻底禁用 F12 及所有开发者调试工具
+                settings.AreDevToolsEnabled = false;
+                // 彻底禁用页面缩放控制
+                settings.IsZoomControlEnabled = false;
+                settings.IsPinchZoomEnabled = false;
+                // 隐藏左下角链接状态栏
+                settings.IsStatusBarEnabled = false;
+                // 禁用滑动手势导航与自动填充
+                settings.IsSwipeNavigationEnabled = false;
+                settings.IsGeneralAutofillEnabled = false;
+                settings.IsPasswordAutosaveEnabled = false;
+
+                // 从 CoreWebView2 核心事件层彻底封杀右键上下文菜单请求
+                AboutMarkdownWebView.CoreWebView2.ContextMenuRequested += (s, e) =>
+                {
+                    e.Handled = true;
+                };
+
+                // 拦截并在外部系统默认浏览器中打开所有超链接
+                AboutMarkdownWebView.CoreWebView2.NewWindowRequested += (s, e) =>
+                {
+                    e.Handled = true;
+                    if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var extUri))
+                    {
+                        _ = Windows.System.Launcher.LaunchUriAsync(extUri);
+                    }
+                };
+
+                AboutMarkdownWebView.CoreWebView2.NavigationStarting += (s, e) =>
+                {
+                    if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var navUri) && 
+                        (navUri.Scheme == Uri.UriSchemeHttp || navUri.Scheme == Uri.UriSchemeHttps))
+                    {
+                        e.Cancel = true;
+                        _ = Windows.System.Launcher.LaunchUriAsync(navUri);
+                    }
+                };
+
                 // 读取当前主题深浅色
                 var bg = _uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
                 bool isDark = (bg.R + bg.G + bg.B) < 384;
-                string themeClass = isDark ? "dark" : "light";
 
-                // 构建离线自适应深浅色 GitHub 风格 Markdown 渲染页面
                 string escapedMarkdown = System.Text.Json.JsonSerializer.Serialize(markdown);
                 string html = $$"""
                 <!DOCTYPE html>
                 <html>
                 <head>
                 <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
                 <style>
+                    * { -webkit-user-drag: none; }
                     body {
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Helvetica, Arial, sans-serif;
                         line-height: 1.6;
@@ -1865,6 +1910,9 @@ namespace FontAutoLoader
                         margin: 0;
                         background: transparent;
                         color: {{(isDark ? "#E6EDF3" : "#1F2328")}};
+                        user-select: text;
+                        -webkit-user-select: text;
+                        touch-action: pan-y;
                     }
                     h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin-top: 24px; margin-bottom: 16px; }
                     h1 { font-size: 2em; border-bottom: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}}; padding-bottom: .3em; }
@@ -1899,7 +1947,7 @@ namespace FontAutoLoader
                     table { border-spacing: 0; border-collapse: collapse; margin-top: 0; margin-bottom: 16px; width: auto; }
                     table th, table td { padding: 6px 13px; border: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}}; }
                     table tr:nth-child(2n) { background-color: {{(isDark ? "rgba(110,118,129,0.1)" : "#F6F8FA")}}; }
-                    a { color: {{(isDark ? "#58A6FF" : "#0969DA")}}; text-decoration: none; }
+                    a { color: {{(isDark ? "#58A6FF" : "#0969DA")}}; text-decoration: none; cursor: pointer; }
                     a:hover { text-decoration: underline; }
                 </style>
                 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -1907,22 +1955,79 @@ namespace FontAutoLoader
                 <body>
                 <div id="content"></div>
                 <script>
+                    // 1. 彻底拦截所有右键菜单事件
+                    document.addEventListener('contextmenu', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }, true);
+
+                    // 2. 彻底禁用 Ctrl+滚轮网页缩放
+                    window.addEventListener('wheel', function(e) {
+                        if (e.ctrlKey) {
+                            e.preventDefault();
+                        }
+                    }, { passive: false });
+
+                    // 3. 严格按键阻断：屏蔽 F1-F12（包含 F7 光标浏览、F5 刷新、F12 调试等）以及所有浏览器组合快捷键
+                    window.addEventListener('keydown', function(e) {
+                        // 屏蔽所有 F 功能键 (F1 至 F12)
+                        if (/^F([1-9]|1[0-2])$/i.test(e.key)) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                        // 屏蔽 Ctrl / Alt / Meta 组合按键（仅放行文本选择 Ctrl+A 与复制 Ctrl+C，其余如查找、打印、保存、新窗口一律拦截）
+                        if (e.ctrlKey || e.altKey || e.metaKey) {
+                            var k = e.key.toLowerCase();
+                            if (k !== 'c' && k !== 'a') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return false;
+                            }
+                        }
+                    }, true);
+
                     const rawMd = {{escapedMarkdown}};
                     if (typeof marked !== 'undefined') {
                         document.getElementById('content').innerHTML = marked.parse(rawMd);
                     } else {
-                        // 离线兜底极简解析渲染
                         document.getElementById('content').innerText = rawMd;
                     }
+
+                    // 4. 拦截所有超链接，确保全部在外部系统默认浏览器中打开
+                    document.addEventListener('click', function(e) {
+                        var a = e.target.closest('a');
+                        if (a && a.href) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.open(a.href, '_blank');
+                        }
+                    }, true);
                 </script>
                 </body>
                 </html>
                 """;
 
+                // 等待页面真正加载并解析完毕后再隐藏过渡进度条，丝滑呈现
+                var tcs = new TaskCompletionSource<bool>();
+                void OnNavigationCompleted(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs args)
+                {
+                    AboutMarkdownWebView.NavigationCompleted -= OnNavigationCompleted;
+                    tcs.TrySetResult(args.IsSuccess);
+                }
+                AboutMarkdownWebView.NavigationCompleted += OnNavigationCompleted;
+
                 AboutMarkdownWebView.NavigateToString(html);
+                await tcs.Task;
+
+                AboutLoadingPanel.Visibility = Visibility.Collapsed;
+                AboutContentArea.Visibility = Visibility.Visible;
             }
             catch
             {
+                AboutLoadingPanel.Visibility = Visibility.Collapsed;
+                AboutContentArea.Visibility = Visibility.Visible;
             }
         }
     }

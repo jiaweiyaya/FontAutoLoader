@@ -432,18 +432,27 @@
                     </ListView>
                 </Grid>
 
-                <!-- 5. 关于此应用页面 (含 Markdown 渲染与图2/图3安全告警视图) -->
+                <!-- 5. 关于此应用页面 (含 Markdown 纯净渲染、加载进度过渡与定制安全告警视图) -->
                 <Grid x:Name="AboutPagePanel" Visibility="Collapsed">
-                    <!-- 5.1 正常状态：Markdown 内容渲染区 -->
-                    <Grid x:Name="AboutContentArea" Visibility="Visible">
+                    <!-- 5.1 加载中过渡进度视图 -->
+                    <Grid x:Name="AboutLoadingPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ProgressRing IsActive="True" Width="44" Height="44" HorizontalAlignment="Center" />
+                            <TextBlock x:Name="TxtAboutLoadingStatus" Text="正在验证说明文档完整性并渲染，请稍候..."
+                                       FontSize="13" Opacity="0.8" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 5.2 正常状态：Markdown 纯净查看渲染区 -->
+                    <Grid x:Name="AboutContentArea" Visibility="Collapsed">
                         <WebView2 x:Name="AboutMarkdownWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
                     </Grid>
 
-                    <!-- 5.2 异常状态 1 (图2)：说明文档安全校验失败 -->
+                    <!-- 5.3 异常状态 1：说明文档安全校验失败 (专属文案) -->
                     <ScrollViewer x:Name="AboutHashErrorPanel" Visibility="Collapsed">
                         <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Left" Margin="8,4,8,24">
                             <TextBlock Text="说明文档安全校验失败" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="安装程序检测到说明文档文件 README.md 的 SHA-256 校验和不匹配，内容可能已被非法篡改或文件损坏！"
+                            <TextBlock Text="应用程序检测到说明文档 README.md 的 SHA-256 校验和不匹配，内容可能已被非预期篡改或文件已损坏！"
                                        FontSize="13" Opacity="0.9" TextWrapping="Wrap" />
 
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -452,7 +461,7 @@
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="完整性比对信息" FontSize="14" FontWeight="SemiBold" />
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="•  预期安全哈希 (Expected) :" FontSize="12" Opacity="0.8" />
+                                        <TextBlock Text="•  预置安全哈希 (Expected) :" FontSize="12" Opacity="0.8" />
                                         <TextBlock x:Name="TxtExpectedHash" Text="-" FontFamily="Consolas" FontSize="12" Margin="16,2,0,4"
                                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
                                     </StackPanel>
@@ -464,16 +473,16 @@
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="出于安装安全考虑，已自动终止文档加载并锁定安装向导。请重新获取官方原版安装包。"
+                            <TextBlock Text="出于软件运行安全考虑，已自动终止该文档的加载。如需恢复，请从官方发布渠道重新获取或更新应用程序。"
                                        FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
                         </StackPanel>
                     </ScrollViewer>
 
-                    <!-- 5.3 异常状态 2 (图3)：无法加载说明文档 (缺失文件) -->
+                    <!-- 5.4 异常状态 2：无法加载说明文档 (缺失文件专属文案) -->
                     <ScrollViewer x:Name="AboutFileNotFoundPanel" Visibility="Collapsed">
                         <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Left" Margin="8,4,8,24">
                             <TextBlock Text="无法加载说明文档" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="安装程序未能找到指定的文档文件：README.md"
+                            <TextBlock Text="应用程序未能找到项目说明文档文件：README.md"
                                        FontSize="13" Opacity="0.9" TextWrapping="Wrap" />
 
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -481,17 +490,17 @@
                                     BorderThickness="1" CornerRadius="8" Padding="18,14,18,16" Margin="0,4,0,4">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="故障排查建议" FontSize="14" FontWeight="SemiBold" />
-                                    <TextBlock Text="•  安装包不完整：请检查安装包是否已完全解压，缺少 README.md 文件；" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
-                                    <TextBlock Text="•  配置路径不匹配：请检查 installer_config.json 中的 MarkdownFile 字段；" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                                    <TextBlock Text="•  文件可能缺失：请检查应用程序安装运行目录下是否存在 README.md 说明文档；" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                                    <TextBlock Text="•  权限或安全拦截：请确认该文件未被第三方杀毒软件误隔离或意外移动；" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
                                     <StackPanel Spacing="3">
-                                        <TextBlock Text="•  当前程序搜索路径：" FontSize="12" Opacity="0.8" />
+                                        <TextBlock Text="•  当前程序检测路径：" FontSize="12" Opacity="0.8" />
                                         <TextBlock x:Name="TxtSearchDirectory" Text="-" FontFamily="Consolas" FontSize="12" Margin="16,2,0,0"
                                                    Opacity="0.6" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="请将项目说明文档放置于程序运行同级目录下后重新启动。"
+                            <TextBlock Text="请将官方 README.md 说明文档放置于上述程序运行同级目录下后重新启动。"
                                        FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
                         </StackPanel>
                     </ScrollViewer>
