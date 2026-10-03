@@ -73,6 +73,8 @@ namespace FontAutoLoader
         private double _targetDrawerWidth = 360;
         private bool _isDrawerAnimating = false;
 
+        private TrayIconService? _trayService;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -107,6 +109,9 @@ namespace FontAutoLoader
 
             // 拦截应用窗口关闭事件，以便执行带进度条的平滑卸载
             this.AppWindow.Closing += MainWindow_AppWindowClosing;
+
+            // 初始化系统托盘图标
+            _trayService = new TrayIconService(this);
         }
 
         private void UpdateTitleBarTheme()
@@ -128,58 +133,69 @@ namespace FontAutoLoader
             }
         }
 
-        private bool _isForceClosing = false;
+        private bool _isExiting = false;
         private bool _isOperationRunning = false;
         private bool _isCancelRequested = false;
 
-        private async void MainWindow_AppWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+        private void MainWindow_AppWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
-            if (_isForceClosing)
+            args.Cancel = true;
+            RequestAppExit();
+        }
+
+        public async void RequestAppExit()
+        {
+            if (_isExiting)
             {
                 return;
             }
+            _isExiting = true;
 
             var loadedFonts = FontNativeService.GetLoadedFonts();
-            if (loadedFonts.Count == 0)
+            if (loadedFonts.Count > 0)
             {
-                return;
+                if (this.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
+                {
+                    presenter.Restore();
+                }
+                this.AppWindow.Show();
+                this.Activate();
+
+                var dialog = new ContentDialog
+                {
+                    Title = "正在安全卸载临时字体",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var sp = new StackPanel { Spacing = 12, Margin = new Thickness(0, 8, 0, 8) };
+                var tipText = new TextBlock { Text = $"正在释放当前已挂载的 {loadedFonts.Count} 个临时字体，请稍候...", Opacity = 0.8 };
+                var pBar = new ProgressBar { Minimum = 0, Maximum = loadedFonts.Count, Value = 0, Height = 6 };
+                sp.Children.Add(tipText);
+                sp.Children.Add(pBar);
+                dialog.Content = sp;
+
+                _ = dialog.ShowAsync();
+
+                await Task.Run(async () =>
+                {
+                    int current = 0;
+                    foreach (var fontPath in loadedFonts)
+                    {
+                        FontNativeService.UnloadFont(fontPath);
+                        current++;
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            pBar.Value = current;
+                        });
+                        await Task.Delay(20);
+                    }
+                });
+
+                dialog.Hide();
             }
 
-            args.Cancel = true;
-
-            var dialog = new ContentDialog
-            {
-                Title = "正在安全卸载临时字体",
-                XamlRoot = this.Content.XamlRoot
-            };
-
-            var sp = new StackPanel { Spacing = 12, Margin = new Thickness(0, 8, 0, 8) };
-            var tipText = new TextBlock { Text = $"正在释放当前已挂载的 {loadedFonts.Count} 个临时字体，请稍候...", Opacity = 0.8 };
-            var pBar = new ProgressBar { Minimum = 0, Maximum = loadedFonts.Count, Value = 0, Height = 6 };
-            sp.Children.Add(tipText);
-            sp.Children.Add(pBar);
-            dialog.Content = sp;
-
-            _ = dialog.ShowAsync();
-
-            await Task.Run(async () =>
-            {
-                int current = 0;
-                foreach (var fontPath in loadedFonts)
-                {
-                    FontNativeService.UnloadFont(fontPath);
-                    current++;
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        pBar.Value = current;
-                    });
-                    await Task.Delay(20);
-                }
-            });
-
-            dialog.Hide();
-            _isForceClosing = true;
-            this.Close();
+            _trayService?.Dispose();
+            System.Environment.Exit(0);
         }
 
         private bool _isLeftDrawerExpanded = true;
@@ -465,6 +481,15 @@ namespace FontAutoLoader
             ColMounted.Width = new GridLength(Math.Max(0.0001, _curMount), GridUnitType.Star);
             ColUnmounted.Width = new GridLength(Math.Max(0.0001, _curUnmount), GridUnitType.Star);
             ColError.Width = new GridLength(Math.Max(0.0001, _curErr), GridUnitType.Star);
+        }
+
+        public void UnloadFontFromTray(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath)) return;
+            FontNativeService.UnloadFont(fullPath);
+            RefreshMountedFonts();
+            SyncFontStatus(fullPath, false, "");
+            UpdateProgressMultiBar();
         }
 
         private void UnloadMountedItem_Click(object sender, RoutedEventArgs e)
