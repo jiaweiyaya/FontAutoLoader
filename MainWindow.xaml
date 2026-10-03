@@ -435,96 +435,117 @@
                 <!-- 5. 关于此应用页面 (暂时留空) -->
                 <Grid x:Name="AboutPagePanel" Visibility="Collapsed" />
 
-                <!-- 6. 应用设置页面 -->
+                <!-- 6. 应用设置页面 (整行自适应充满，支持子项阻尼平滑展开推移动效) -->
                 <Grid x:Name="SettingsPagePanel" Visibility="Collapsed" RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
                         <TextBlock Text="应用设置" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock Text="配置开机启动偏好、字体安全策略与窗口退出行为。" Opacity="0.8" FontSize="12" />
                     </StackPanel>
 
-                    <ScrollViewer Grid.Row="1">
-                        <StackPanel Spacing="8" MaxWidth="820" HorizontalAlignment="Left">
-                            <!-- 开机自启动 -->
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                        <!-- 去除 StackPanel 的 Spacing，避免元素折叠后遗留 8px 空隙引发跳跃 -->
+                        <StackPanel HorizontalAlignment="Stretch">
+                            <!-- 1. 开机自启动 -->
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
+                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                    Margin="0,0,0,8" HorizontalAlignment="Stretch">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="开机自启动" FontWeight="SemiBold" FontSize="14" />
                                         <TextBlock Text="在 Windows 系统登录启动时自动运行本应用" FontSize="12" Opacity="0.6" />
                                     </StackPanel>
                                     <ToggleSwitch Grid.Column="1" x:Name="ToggleAutoStart" IsOn="False"
-                                                  OnContent="" OffContent="" VerticalAlignment="Center" Margin="0"
+                                                  MinWidth="0" OnContent="{x:Null}" OffContent="{x:Null}"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0"
                                                   Toggled="ToggleAutoStart_Toggled" />
                                 </Grid>
                             </Border>
 
-                            <!-- 开机自启动后不显示主窗口 -->
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="开机自启动后不显示主窗口" FontWeight="SemiBold" FontSize="14" />
-                                        <TextBlock Text="开机启动时直接退入系统托盘常驻，不主动弹出主界面窗口" FontSize="12" Opacity="0.6" />
-                                    </StackPanel>
-                                    <ToggleSwitch Grid.Column="1" x:Name="ToggleSilentStart" IsOn="False" IsEnabled="False"
-                                                  OnContent="" OffContent="" VerticalAlignment="Center" Margin="0" />
-                                </Grid>
-                            </Border>
+                            <!-- 1.1 子选项：开机自启动后不显示主窗口 (折叠容器自带平滑间距，彻底消除跳跃) -->
+                            <Grid x:Name="ContainerSilentStart" Height="0" Opacity="0" Visibility="Collapsed" HorizontalAlignment="Stretch">
+                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                        Margin="28,0,0,8" HorizontalAlignment="Stretch" VerticalAlignment="Top">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock Text="开机自启动后不显示主窗口" FontWeight="SemiBold" FontSize="14" />
+                                            <TextBlock Text="开机启动时直接退入系统托盘常驻，不主动弹出主界面窗口" FontSize="12" Opacity="0.6" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" x:Name="ToggleSilentStart" IsOn="False"
+                                                      MinWidth="0" OnContent="{x:Null}" OffContent="{x:Null}"
+                                                      VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
 
-                            <!-- 允许删除系统中已安装字体 -->
+                            <!-- 2. 允许删除系统中已安装字体 -->
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
+                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                    Margin="0,0,0,8" HorizontalAlignment="Stretch">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="允许删除系统中已安装字体" FontWeight="SemiBold" FontSize="14" />
                                         <TextBlock Text="开启后，在已安装字体管理页中将开放删除按钮与注销操作" FontSize="12" Opacity="0.6" />
                                     </StackPanel>
                                     <ToggleSwitch Grid.Column="1" x:Name="ToggleAllowDeleteInstalled" IsOn="True"
-                                                  OnContent="" OffContent="" VerticalAlignment="Center" Margin="0" />
+                                                  MinWidth="0" OnContent="{x:Null}" OffContent="{x:Null}"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0"
+                                                  Toggled="ToggleAllowDeleteInstalled_Toggled" />
                                 </Grid>
                             </Border>
 
-                            <!-- 允许删除警告级别系统字体 -->
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="允许删除警告级别系统字体" FontWeight="SemiBold" FontSize="14" />
-                                        <TextBlock Text="允许删除系统预装的推荐保留字体（可能会影响部分特定程序排版）" FontSize="12" Opacity="0.6" />
-                                    </StackPanel>
-                                    <ToggleSwitch Grid.Column="1" x:Name="ToggleAllowDeleteWarning" IsOn="False"
-                                                  OnContent="" OffContent="" VerticalAlignment="Center" Margin="0" />
-                                </Grid>
-                            </Border>
+                            <!-- 2.1 子选项：警告与危险级别字体管理 (高度包含卡片自身及间距，收缩过程浑然一体) -->
+                            <Grid x:Name="ContainerDeleteAdvanced" Height="148" Opacity="1" Visibility="Visible" HorizontalAlignment="Stretch">
+                                <StackPanel Margin="28,0,0,8" VerticalAlignment="Top">
+                                    <!-- 允许删除警告级别系统字体 -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                            Margin="0,0,0,8" HorizontalAlignment="Stretch">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="允许删除警告级别系统字体" FontWeight="SemiBold" FontSize="14" />
+                                                <TextBlock Text="允许删除系统预装的推荐保留字体（可能会影响部分特定程序排版）" FontSize="12" Opacity="0.6" />
+                                            </StackPanel>
+                                            <ToggleSwitch Grid.Column="1" x:Name="ToggleAllowDeleteWarning" IsOn="False"
+                                                          MinWidth="0" OnContent="{x:Null}" OffContent="{x:Null}"
+                                                          VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0" />
+                                        </Grid>
+                                    </Border>
 
-                            <!-- 允许删除危险级别系统字体 -->
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="允许删除危险级别系统字体" FontWeight="SemiBold" FontSize="14" />
-                                        <TextBlock Text="允许删除系统核心必需字体（极度危险，删除将直接导致系统崩溃或乱码）" FontSize="12" Opacity="0.6" />
-                                    </StackPanel>
-                                    <ToggleSwitch Grid.Column="1" x:Name="ToggleAllowDeleteCritical" IsOn="False"
-                                                  OnContent="" OffContent="" VerticalAlignment="Center" Margin="0" />
-                                </Grid>
-                            </Border>
+                                    <!-- 允许删除危险级别系统字体 -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                            HorizontalAlignment="Stretch">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="允许删除危险级别系统字体" FontWeight="SemiBold" FontSize="14" />
+                                                <TextBlock Text="允许删除系统核心必需字体（极度危险，删除将直接导致系统崩溃或乱码）" FontSize="12" Opacity="0.6" />
+                                            </StackPanel>
+                                            <ToggleSwitch Grid.Column="1" x:Name="ToggleAllowDeleteCritical" IsOn="False"
+                                                          MinWidth="0" OnContent="{x:Null}" OffContent="{x:Null}"
+                                                          VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
 
-                            <!-- 关闭主窗口行为 -->
+                            <!-- 3. 关闭主窗口行为 -->
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12">
+                                    BorderThickness="1" CornerRadius="8" Padding="16,12,16,12"
+                                    Margin="0,0,0,8" HorizontalAlignment="Stretch">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="关闭主窗口行为" FontWeight="SemiBold" FontSize="14" />
                                         <TextBlock Text="设置点击主窗口右上角关闭按钮时的默认响应行为" FontSize="12" Opacity="0.6" />
                                     </StackPanel>
-                                    <ComboBox Grid.Column="1" x:Name="CmbCloseAction" SelectedIndex="0" VerticalAlignment="Center" MinWidth="150">
+                                    <ComboBox Grid.Column="1" x:Name="CmbCloseAction" SelectedIndex="0"
+                                              VerticalAlignment="Center" HorizontalAlignment="Right" MinWidth="150">
                                         <ComboBoxItem Content="弹窗询问" />
                                         <ComboBoxItem Content="彻底退出应用" />
                                         <ComboBoxItem Content="最小化到托盘" />

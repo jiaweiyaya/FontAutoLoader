@@ -73,6 +73,15 @@ namespace FontAutoLoader
         private double _targetDrawerWidth = 360;
         private bool _isDrawerAnimating = false;
 
+        // 设置页子项 200Hz 高度平滑推移与淡入淡出动画状态 (已将间距纳入连续阻尼计算，杜绝突变)
+        private const double SilentStartFullHeight = 72.0;
+        private const double DeleteAdvancedFullHeight = 148.0;
+        private double _curSilentStartHeight = 0.0;
+        private double _targetSilentStartHeight = 0.0;
+        private double _curDeleteAdvancedHeight = 148.0;
+        private double _targetDeleteAdvancedHeight = 148.0;
+        private bool _isSettingsSubAnimating = false;
+
         private TrayIconService? _trayService;
 
         public MainWindow()
@@ -268,14 +277,43 @@ namespace FontAutoLoader
 
         private void ToggleAutoStart_Toggled(object sender, RoutedEventArgs e)
         {
-            if (ToggleSilentStart != null && ToggleAutoStart != null)
+            if (ToggleAutoStart == null || ContainerSilentStart == null) return;
+
+            bool isExpand = ToggleAutoStart.IsOn;
+            _targetSilentStartHeight = isExpand ? SilentStartFullHeight : 0.0;
+
+            if (isExpand)
             {
-                ToggleSilentStart.IsEnabled = ToggleAutoStart.IsOn;
-                if (!ToggleAutoStart.IsOn)
-                {
-                    ToggleSilentStart.IsOn = false;
-                }
+                ContainerSilentStart.Visibility = Visibility.Visible;
             }
+            else if (ToggleSilentStart != null)
+            {
+                ToggleSilentStart.IsOn = false;
+            }
+
+            _isSettingsSubAnimating = true;
+            StartVsyncTracker();
+        }
+
+        private void ToggleAllowDeleteInstalled_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (ToggleAllowDeleteInstalled == null || ContainerDeleteAdvanced == null) return;
+
+            bool isExpand = ToggleAllowDeleteInstalled.IsOn;
+            _targetDeleteAdvancedHeight = isExpand ? DeleteAdvancedFullHeight : 0.0;
+
+            if (isExpand)
+            {
+                ContainerDeleteAdvanced.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                if (ToggleAllowDeleteWarning != null) ToggleAllowDeleteWarning.IsOn = false;
+                if (ToggleAllowDeleteCritical != null) ToggleAllowDeleteCritical.IsOn = false;
+            }
+
+            _isSettingsSubAnimating = true;
+            StartVsyncTracker();
         }
 
         private void UpdateCustomIndicator(bool animate)
@@ -476,12 +514,51 @@ namespace FontAutoLoader
                 }
             }
 
+            // 设置页子项高度连续阻尼推移与透明度淡入
+            if (_isSettingsSubAnimating)
+            {
+                double subFactor = 1.0 - Math.Exp(-18.0 * dt);
+                _curSilentStartHeight += (_targetSilentStartHeight - _curSilentStartHeight) * subFactor;
+                _curDeleteAdvancedHeight += (_targetDeleteAdvancedHeight - _curDeleteAdvancedHeight) * subFactor;
+
+                if (ContainerSilentStart != null)
+                {
+                    ContainerSilentStart.Height = Math.Max(0, _curSilentStartHeight);
+                    ContainerSilentStart.Opacity = Math.Clamp(_curSilentStartHeight / SilentStartFullHeight, 0.0, 1.0);
+                    if (_targetSilentStartHeight == 0 && Math.Abs(_curSilentStartHeight) < 0.5)
+                    {
+                        ContainerSilentStart.Height = 0;
+                        ContainerSilentStart.Visibility = Visibility.Collapsed;
+                    }
+                }
+
+                if (ContainerDeleteAdvanced != null)
+                {
+                    ContainerDeleteAdvanced.Height = Math.Max(0, _curDeleteAdvancedHeight);
+                    ContainerDeleteAdvanced.Opacity = Math.Clamp(_curDeleteAdvancedHeight / DeleteAdvancedFullHeight, 0.0, 1.0);
+                    if (_targetDeleteAdvancedHeight == 0 && Math.Abs(_curDeleteAdvancedHeight) < 0.5)
+                    {
+                        ContainerDeleteAdvanced.Height = 0;
+                        ContainerDeleteAdvanced.Visibility = Visibility.Collapsed;
+                    }
+                }
+
+                bool isSilentDone = Math.Abs(_targetSilentStartHeight - _curSilentStartHeight) < 0.5;
+                bool isDeleteDone = Math.Abs(_targetDeleteAdvancedHeight - _curDeleteAdvancedHeight) < 0.5;
+                if (isSilentDone && isDeleteDone)
+                {
+                    _curSilentStartHeight = _targetSilentStartHeight;
+                    _curDeleteAdvancedHeight = _targetDeleteAdvancedHeight;
+                    _isSettingsSubAnimating = false;
+                }
+            }
+
             bool isProgressDone = Math.Abs(_targetInst - _curInst) < 0.002 &&
                                   Math.Abs(_targetMount - _curMount) < 0.002 &&
                                   Math.Abs(_targetUnmount - _curUnmount) < 0.002 &&
                                   Math.Abs(_targetErr - _curErr) < 0.002;
 
-            if (isProgressDone && !_isIndicatorAnimating && !_isPanelTransitioning && !_isDrawerAnimating)
+            if (isProgressDone && !_isIndicatorAnimating && !_isPanelTransitioning && !_isDrawerAnimating && !_isSettingsSubAnimating)
             {
                 _curInst = _targetInst;
                 _curMount = _targetMount;
