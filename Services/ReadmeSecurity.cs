@@ -2,5 +2,5 @@ namespace FontAutoLoader.Services;
 
 public static class ReadmeSecurity
 {
-    public const string ExpectedHash = "38EAF3DE502584639925BBAF0296A3E25BFA28FD354E54EC8D7CA0C6702E8131";
+    public const string ExpectedHash = "ABE9E2444CFFD73C984F1142B645A94E84B964D94307E4D6FAB392C70737198C";
 }
