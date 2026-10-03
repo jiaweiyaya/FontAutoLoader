@@ -242,6 +242,8 @@ namespace FontAutoLoader
                 "SearchPage" => SearchPagePanel,
                 "InstalledPage" => InstalledPagePanel,
                 "FolderPage" => FolderPagePanel,
+                "AboutPage" => AboutPagePanel,
+                "SettingsPage" => SettingsPagePanel,
                 _ => AssPagePanel
             };
 
@@ -250,6 +252,8 @@ namespace FontAutoLoader
             SearchPagePanel.Visibility = (target == SearchPagePanel) ? Visibility.Visible : Visibility.Collapsed;
             InstalledPagePanel.Visibility = (target == InstalledPagePanel) ? Visibility.Visible : Visibility.Collapsed;
             FolderPagePanel.Visibility = (target == FolderPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+            AboutPagePanel.Visibility = (target == AboutPagePanel) ? Visibility.Visible : Visibility.Collapsed;
+            SettingsPagePanel.Visibility = (target == SettingsPagePanel) ? Visibility.Visible : Visibility.Collapsed;
 
             // 初始化新面板在下方向上微移 16px 且透明
             target.Opacity = 0;
@@ -260,6 +264,18 @@ namespace FontAutoLoader
             _isPanelTransitioning = true;
 
             StartVsyncTracker();
+        }
+
+        private void ToggleAutoStart_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (ToggleSilentStart != null && ToggleAutoStart != null)
+            {
+                ToggleSilentStart.IsEnabled = ToggleAutoStart.IsOn;
+                if (!ToggleAutoStart.IsOn)
+                {
+                    ToggleSilentStart.IsOn = false;
+                }
+            }
         }
 
         private void UpdateCustomIndicator(bool animate)
