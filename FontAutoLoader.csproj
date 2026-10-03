@@ -69,4 +69,25 @@
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">False</PublishTrimmed>
   </PropertyGroup>
+
+  <!-- 编译时自动将项目根目录的 README.md 复制到输出根目录 -->
+  <ItemGroup>
+    <None Update="README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 编译前自动计算 README.md 的 SHA-256 并同步写入 Services/ReadmeSecurity.cs -->
+  <Target Name="GenerateReadmeSecurityHash" BeforeTargets="BeforeCompile" Condition="Exists('$(ProjectDir)README.md')">
+    <GetFileHash Files="$(ProjectDir)README.md" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_ComputedReadmeHash" />
+    </GetFileHash>
+    <WriteLinesToFile File="$(ProjectDir)Services\ReadmeSecurity.cs" Overwrite="true" Lines="namespace FontAutoLoader.Services%3B
+
+public static class ReadmeSecurity
+{
+    public const string ExpectedHash = &quot;$(_ComputedReadmeHash)&quot;%3B
+}
+" />
+  </Target>
 </Project>

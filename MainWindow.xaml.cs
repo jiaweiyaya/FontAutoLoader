@@ -19,6 +19,7 @@ using WinRT.Interop;
 using FontAutoLoader.Models;
 using FontAutoLoader.Services;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -342,6 +343,11 @@ namespace FontAutoLoader
             _isPanelTransitioning = true;
 
             StartVsyncTracker();
+
+            if (tag == "AboutPage")
+            {
+                LoadAndVerifyAboutReadme();
+            }
         }
 
         private bool _isSettingsInitializing = false;
@@ -1777,6 +1783,140 @@ namespace FontAutoLoader
                         break;
                     }
                 }
+            }
+        }
+
+        private bool _isAboutLoaded = false;
+
+        private async void LoadAndVerifyAboutReadme()
+        {
+            if (_isAboutLoaded) return;
+
+            string baseDir = System.AppContext.BaseDirectory;
+            string readmePath = System.IO.Path.Combine(baseDir, "README.md");
+
+            // 1. 检查文件是否存在，缺失则精准呈现图 3 告警
+            if (!System.IO.File.Exists(readmePath))
+            {
+                AboutContentArea.Visibility = Visibility.Collapsed;
+                AboutHashErrorPanel.Visibility = Visibility.Collapsed;
+                AboutFileNotFoundPanel.Visibility = Visibility.Visible;
+                TxtSearchDirectory.Text = baseDir;
+                return;
+            }
+
+            // 2. 计算实际 SHA-256 哈希值
+            byte[] fileBytes = await System.IO.File.ReadAllBytesAsync(readmePath);
+            byte[] hashBytes = SHA256.HashData(fileBytes);
+            string actualHash = Convert.ToHexString(hashBytes);
+            string expectedHash = (ReadmeSecurity.ExpectedHash ?? "").ToUpperInvariant();
+
+            // 3. 安全哈希比对，不匹配则精准呈现图 2 告警
+            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                AboutContentArea.Visibility = Visibility.Collapsed;
+                AboutFileNotFoundPanel.Visibility = Visibility.Collapsed;
+                AboutHashErrorPanel.Visibility = Visibility.Visible;
+                TxtExpectedHash.Text = expectedHash;
+                TxtActualHash.Text = actualHash;
+                return;
+            }
+
+            // 4. 校验通过：呈现 Markdown 渲染视图
+            AboutHashErrorPanel.Visibility = Visibility.Collapsed;
+            AboutFileNotFoundPanel.Visibility = Visibility.Collapsed;
+            AboutContentArea.Visibility = Visibility.Visible;
+
+            string markdownText = System.Text.Encoding.UTF8.GetString(fileBytes);
+            await RenderMarkdownInWebViewAsync(markdownText);
+            _isAboutLoaded = true;
+        }
+
+        private async Task RenderMarkdownInWebViewAsync(string markdown)
+        {
+            try
+            {
+                await AboutMarkdownWebView.EnsureCoreWebView2Async();
+                AboutMarkdownWebView.DefaultBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
+
+                // 读取当前主题深浅色
+                var bg = _uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
+                bool isDark = (bg.R + bg.G + bg.B) < 384;
+                string themeClass = isDark ? "dark" : "light";
+
+                // 构建离线自适应深浅色 GitHub 风格 Markdown 渲染页面
+                string escapedMarkdown = System.Text.Json.JsonSerializer.Serialize(markdown);
+                string html = $$"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <meta charset="utf-8" />
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+                        line-height: 1.6;
+                        padding: 24px 32px;
+                        margin: 0;
+                        background: transparent;
+                        color: {{(isDark ? "#E6EDF3" : "#1F2328")}};
+                    }
+                    h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin-top: 24px; margin-bottom: 16px; }
+                    h1 { font-size: 2em; border-bottom: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}}; padding-bottom: .3em; }
+                    h2 { font-size: 1.5em; border-bottom: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}}; padding-bottom: .3em; }
+                    h3 { font-size: 1.25em; }
+                    p, blockquote, ul, ol, dl, table, pre { margin-top: 0; margin-bottom: 16px; }
+                    code {
+                        padding: .2em .4em;
+                        font-size: 85%;
+                        background-color: {{(isDark ? "rgba(110,118,129,0.4)" : "rgba(175,184,193,0.2)")}};
+                        border-radius: 6px;
+                        font-family: Consolas, monospace;
+                    }
+                    pre {
+                        padding: 16px;
+                        overflow: auto;
+                        font-size: 85%;
+                        line-height: 1.45;
+                        background-color: {{(isDark ? "#161B22" : "#F6F8FA")}};
+                        border-radius: 6px;
+                        border: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}};
+                    }
+                    pre code { padding: 0; background: transparent; font-size: 100%; }
+                    hr { height: .25em; padding: 0; margin: 24px 0; background-color: {{(isDark ? "#30363D" : "#D0D7DE")}}; border: 0; }
+                    blockquote {
+                        padding: 0 1em;
+                        color: {{(isDark ? "#8B949E" : "#656D76")}};
+                        border-left: .25em solid {{(isDark ? "#30363D" : "#D0D7DE")}};
+                    }
+                    ul, ol { padding-left: 2em; }
+                    li + li { margin-top: .25em; }
+                    table { border-spacing: 0; border-collapse: collapse; margin-top: 0; margin-bottom: 16px; width: auto; }
+                    table th, table td { padding: 6px 13px; border: 1px solid {{(isDark ? "#30363D" : "#D0D7DE")}}; }
+                    table tr:nth-child(2n) { background-color: {{(isDark ? "rgba(110,118,129,0.1)" : "#F6F8FA")}}; }
+                    a { color: {{(isDark ? "#58A6FF" : "#0969DA")}}; text-decoration: none; }
+                    a:hover { text-decoration: underline; }
+                </style>
+                <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+                </head>
+                <body>
+                <div id="content"></div>
+                <script>
+                    const rawMd = {{escapedMarkdown}};
+                    if (typeof marked !== 'undefined') {
+                        document.getElementById('content').innerHTML = marked.parse(rawMd);
+                    } else {
+                        // 离线兜底极简解析渲染
+                        document.getElementById('content').innerText = rawMd;
+                    }
+                </script>
+                </body>
+                </html>
+                """;
+
+                AboutMarkdownWebView.NavigateToString(html);
+            }
+            catch
+            {
             }
         }
     }
