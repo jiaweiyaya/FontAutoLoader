@@ -197,9 +197,13 @@ namespace FontAutoLoader.Services
 
         public void OpenMainWindow()
         {
-            ShowWindow(_mainHwnd, SW_RESTORE);
-            SetForegroundWindow(_mainHwnd);
-            _mainWindow.Activate();
+            _mainWindow.DispatcherQueue.TryEnqueue(() =>
+            {
+                _mainWindow.AppWindow.Show();
+                ShowWindow(_mainHwnd, SW_RESTORE);
+                SetForegroundWindow(_mainHwnd);
+                _mainWindow.Activate();
+            });
         }
 
         private void ShowContextMenu()

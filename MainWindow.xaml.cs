@@ -121,6 +121,9 @@ namespace FontAutoLoader
 
             // 初始化系统托盘图标
             _trayService = new TrayIconService(this);
+
+            // 读取并初始化应用设置
+            LoadSettingsIntoUi();
         }
 
         private void UpdateTitleBarTheme()
@@ -146,9 +149,75 @@ namespace FontAutoLoader
         private bool _isOperationRunning = false;
         private bool _isCancelRequested = false;
 
-        private void MainWindow_AppWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+        private async void MainWindow_AppWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
             args.Cancel = true;
+
+            int action = SettingsService.Current.CloseAction;
+
+            if (action == 2) // 最小化到托盘
+            {
+                this.AppWindow.Hide();
+                return;
+            }
+
+            if (action == 0) // 弹窗询问
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "关闭主窗口",
+                    XamlRoot = this.Content.XamlRoot,
+                    PrimaryButtonText = "最小化到托盘",
+                    SecondaryButtonText = "彻底退出",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Primary
+                };
+
+                var sp = new StackPanel { Spacing = 12 };
+                sp.Children.Add(new TextBlock
+                {
+                    Text = "请选择点击关闭按钮时的操作行为：",
+                    Opacity = 0.9
+                });
+
+                var chkRemember = new CheckBox
+                {
+                    Content = "记住我的选择，以后不再询问",
+                    IsChecked = false
+                };
+                sp.Children.Add(chkRemember);
+                dialog.Content = sp;
+
+                var result = await dialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    if (chkRemember.IsChecked == true)
+                    {
+                        SettingsService.Current.CloseAction = 2;
+                        SettingsService.Save();
+                        if (CmbCloseAction != null) CmbCloseAction.SelectedIndex = 2;
+                    }
+                    this.AppWindow.Hide();
+                    return;
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    if (chkRemember.IsChecked == true)
+                    {
+                        SettingsService.Current.CloseAction = 1;
+                        SettingsService.Save();
+                        if (CmbCloseAction != null) CmbCloseAction.SelectedIndex = 1;
+                    }
+                    RequestAppExit();
+                    return;
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            // 彻底退出应用
             RequestAppExit();
         }
 
@@ -275,6 +344,78 @@ namespace FontAutoLoader
             StartVsyncTracker();
         }
 
+        private bool _isSettingsInitializing = false;
+
+        private void LoadSettingsIntoUi()
+        {
+            _isSettingsInitializing = true;
+            try
+            {
+                var s = SettingsService.Current;
+                if (ToggleAutoStart != null) ToggleAutoStart.IsOn = s.AutoStart;
+                if (ToggleSilentStart != null) ToggleSilentStart.IsOn = s.SilentStart;
+                if (ToggleAllowDeleteInstalled != null) ToggleAllowDeleteInstalled.IsOn = s.AllowDeleteInstalled;
+                if (ToggleAllowDeleteWarning != null) ToggleAllowDeleteWarning.IsOn = s.AllowDeleteWarning;
+                if (ToggleAllowDeleteCritical != null) ToggleAllowDeleteCritical.IsOn = s.AllowDeleteCritical;
+                if (CmbCloseAction != null)
+                {
+                    CmbCloseAction.SelectedIndex = Math.Clamp(s.CloseAction, 0, 2);
+                    CmbCloseAction.SelectionChanged += CmbCloseAction_SelectionChanged;
+                }
+
+                if (ToggleSilentStart != null)
+                {
+                    ToggleSilentStart.Toggled += (sender, args) =>
+                    {
+                        if (_isSettingsInitializing) return;
+                        SettingsService.Current.SilentStart = ToggleSilentStart.IsOn;
+                        SettingsService.Save();
+                        SettingsService.ApplyAutoStartRegistry(SettingsService.Current.AutoStart, SettingsService.Current.SilentStart);
+                    };
+                }
+
+                // 首次进入根据配置设置展开高度
+                if (ContainerSilentStart != null)
+                {
+                    _curSilentStartHeight = s.AutoStart ? SilentStartFullHeight : 0.0;
+                    _targetSilentStartHeight = _curSilentStartHeight;
+                    ContainerSilentStart.Height = _curSilentStartHeight;
+                    ContainerSilentStart.Opacity = s.AutoStart ? 1.0 : 0.0;
+                    ContainerSilentStart.Visibility = s.AutoStart ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (ContainerDeleteAdvanced != null)
+                {
+                    _curDeleteAdvancedHeight = s.AllowDeleteInstalled ? DeleteAdvancedFullHeight : 0.0;
+                    _targetDeleteAdvancedHeight = _curDeleteAdvancedHeight;
+                    ContainerDeleteAdvanced.Height = _curDeleteAdvancedHeight;
+                    ContainerDeleteAdvanced.Opacity = s.AllowDeleteInstalled ? 1.0 : 0.0;
+                    ContainerDeleteAdvanced.Visibility = s.AllowDeleteInstalled ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (ToggleAllowDeleteWarning != null)
+                {
+                    ToggleAllowDeleteWarning.Toggled += ToggleAllowDeleteWarning_Toggled;
+                }
+
+                if (ToggleAllowDeleteCritical != null)
+                {
+                    ToggleAllowDeleteCritical.Toggled += ToggleAllowDeleteCritical_Toggled;
+                }
+            }
+            finally
+            {
+                _isSettingsInitializing = false;
+            }
+        }
+
+        private void CmbCloseAction_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isSettingsInitializing || CmbCloseAction == null) return;
+            SettingsService.Current.CloseAction = CmbCloseAction.SelectedIndex;
+            SettingsService.Save();
+        }
+
         private void ToggleAutoStart_Toggled(object sender, RoutedEventArgs e)
         {
             if (ToggleAutoStart == null || ContainerSilentStart == null) return;
@@ -289,6 +430,14 @@ namespace FontAutoLoader
             else if (ToggleSilentStart != null)
             {
                 ToggleSilentStart.IsOn = false;
+            }
+
+            if (!_isSettingsInitializing)
+            {
+                SettingsService.Current.AutoStart = isExpand;
+                if (!isExpand) SettingsService.Current.SilentStart = false;
+                SettingsService.Save();
+                SettingsService.ApplyAutoStartRegistry(SettingsService.Current.AutoStart, SettingsService.Current.SilentStart);
             }
 
             _isSettingsSubAnimating = true;
@@ -312,8 +461,113 @@ namespace FontAutoLoader
                 if (ToggleAllowDeleteCritical != null) ToggleAllowDeleteCritical.IsOn = false;
             }
 
+            if (!_isSettingsInitializing)
+            {
+                SettingsService.Current.AllowDeleteInstalled = isExpand;
+                if (!isExpand)
+                {
+                    SettingsService.Current.AllowDeleteWarning = false;
+                    SettingsService.Current.AllowDeleteCritical = false;
+                }
+                SettingsService.Save();
+            }
+
             _isSettingsSubAnimating = true;
             StartVsyncTracker();
+        }
+
+        private async void ToggleAllowDeleteWarning_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_isSettingsInitializing || ToggleAllowDeleteWarning == null) return;
+
+            if (ToggleAllowDeleteWarning.IsOn)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "警告：开启推荐保留字体删除权限",
+                    XamlRoot = this.Content.XamlRoot,
+                    PrimaryButtonText = "执意开启",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close
+                };
+
+                var sp = new StackPanel { Spacing = 10 };
+                var headerText = new TextBlock
+                {
+                    Text = "【风险提示】警告级别字体通常为 Windows 预装或常用办公/界面字体（如楷体、仿宋、黑体、Consolas 等）。",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 251, 192, 45)),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                var tipText = new TextBlock
+                {
+                    Text = "删除此类字体可能导致部分办公软件排版异常、网页乱码或特定动漫字幕无法正常渲染。\n\n您确定要开启删除此类字体的权限吗？",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9
+                };
+                sp.Children.Add(headerText);
+                sp.Children.Add(tipText);
+                dialog.Content = sp;
+
+                var res = await dialog.ShowAsync();
+                if (res != ContentDialogResult.Primary)
+                {
+                    _isSettingsInitializing = true;
+                    ToggleAllowDeleteWarning.IsOn = false;
+                    _isSettingsInitializing = false;
+                    return;
+                }
+            }
+
+            SettingsService.Current.AllowDeleteWarning = ToggleAllowDeleteWarning.IsOn;
+            SettingsService.Save();
+        }
+
+        private async void ToggleAllowDeleteCritical_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_isSettingsInitializing || ToggleAllowDeleteCritical == null) return;
+
+            if (ToggleAllowDeleteCritical.IsOn)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "严重警告：开启核心系统字体删除权限",
+                    XamlRoot = this.Content.XamlRoot,
+                    PrimaryButtonText = "执意开启",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close
+                };
+
+                var sp = new StackPanel { Spacing = 10 };
+                var headerText = new TextBlock
+                {
+                    Text = "【极度危险】此类字体包含 Segoe UI、微软雅黑、宋体等 Windows 系统核心必需界面依赖！",
+                    FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 229, 57, 53)),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                var tipText = new TextBlock
+                {
+                    Text = "删除系统核心必需字体将极大概率导致 Windows 资源管理器崩溃、桌面按钮与文字变为方块乱码、甚至 Windows 无法正常启动！\n\n强烈建议保持关闭状态。您确定要执意开启此极度危险的权限吗？",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9
+                };
+                sp.Children.Add(headerText);
+                sp.Children.Add(tipText);
+                dialog.Content = sp;
+
+                var res = await dialog.ShowAsync();
+                if (res != ContentDialogResult.Primary)
+                {
+                    _isSettingsInitializing = true;
+                    ToggleAllowDeleteCritical.IsOn = false;
+                    _isSettingsInitializing = false;
+                    return;
+                }
+            }
+
+            SettingsService.Current.AllowDeleteCritical = ToggleAllowDeleteCritical.IsOn;
+            SettingsService.Save();
         }
 
         private void UpdateCustomIndicator(bool animate)
@@ -1364,6 +1618,27 @@ namespace FontAutoLoader
                 return;
             }
 
+            // 规则 1：检查是否允许删除任何已安装字体
+            if (!SettingsService.Current.AllowDeleteInstalled)
+            {
+                await ShowDeleteBlockedDialogAsync("【允许删除系统中已安装字体】");
+                return;
+            }
+
+            // 规则 2：检查警告级别字体权限
+            if (item.Risk == FontRiskLevel.Warning && !SettingsService.Current.AllowDeleteWarning)
+            {
+                await ShowDeleteBlockedDialogAsync("【允许删除警告级别系统字体】");
+                return;
+            }
+
+            // 规则 3：检查危险核心级别字体权限
+            if (item.Risk == FontRiskLevel.Critical && !SettingsService.Current.AllowDeleteCritical)
+            {
+                await ShowDeleteBlockedDialogAsync("【允许删除危险级别系统字体】");
+                return;
+            }
+
             ContentDialog dialog = new ContentDialog
             {
                 XamlRoot = this.Content.XamlRoot,
@@ -1459,6 +1734,48 @@ namespace FontAutoLoader
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errDialog.ShowAsync();
+                }
+            }
+        }
+
+        private async Task ShowDeleteBlockedDialogAsync(string ruleName)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "无法删除字体",
+                Content = new TextBlock
+                {
+                    Text = $"此类别字体受到应用设置规则 {ruleName} 的保护，无法删除。请前往应用设置页开启此分类字体删除功能后再进行尝试！",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.95
+                },
+                PrimaryButtonText = "转到应用设置",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var res = await dialog.ShowAsync();
+            if (res == ContentDialogResult.Primary)
+            {
+                NavigateToSettingsPage();
+            }
+        }
+
+        private void NavigateToSettingsPage()
+        {
+            SwitchPageWithAnimation("SettingsPage");
+
+            if (NavView?.FooterMenuItems != null)
+            {
+                foreach (var item in NavView.FooterMenuItems)
+                {
+                    if (item is NavigationViewItem navItem && navItem.Tag?.ToString() == "SettingsPage")
+                    {
+                        NavView.SelectedItem = navItem;
+                        UpdateCustomIndicator(true);
+                        break;
+                    }
                 }
             }
         }

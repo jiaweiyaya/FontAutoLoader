@@ -44,7 +44,21 @@ namespace FontAutoLoader
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
             _window = new MainWindow();
-            _window.Activate();
+
+            string[] cmdArgs = Environment.GetCommandLineArgs();
+            bool isSilent = System.Linq.Enumerable.Any(cmdArgs, a => 
+                string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) || 
+                string.Equals(a, "--autostart", StringComparison.OrdinalIgnoreCase));
+
+            // 如果满足开机自启且不显示主窗口，则直接在托盘静默运行
+            if (isSilent && Services.SettingsService.Current.AutoStart && Services.SettingsService.Current.SilentStart)
+            {
+                // 主窗口已经在 MainWindow 构造函数中初始化了托盘，不调用 Activate() 即可保持静默
+            }
+            else
+            {
+                _window.Activate();
+            }
         }
     }
 }
